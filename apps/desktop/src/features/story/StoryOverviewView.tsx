@@ -68,10 +68,12 @@ interface UnassignedSceneMoveDraft {
 interface ChapterSceneMoveDraft {
   sceneId: string;
   sourceChapterId: string;
-  targetChapterId: string;
+  targetChapterId: string | null;
   placement: SceneMovePlacement;
   anchorSceneId: string;
 }
+
+const UNASSIGNED_DESTINATION_VALUE = "__unassigned__";
 
 interface StoryBriefState {
   title: string;
@@ -786,7 +788,7 @@ export function StoryOverviewView() {
   function buildChapterSceneMoveDraft(
     sceneId: string,
     sourceChapterId: string,
-    targetChapterId: string,
+    targetChapterId: string | null,
     placement: SceneMovePlacement = "end",
     anchorSceneId = "",
   ): ChapterSceneMoveDraft {
@@ -1053,10 +1055,7 @@ export function StoryOverviewView() {
 
   function handleStartChapterSceneMove(sceneId: string, sourceChapterId: string) {
     const fallbackChapterId =
-      orderedChapters.find((chapter) => chapter.id !== sourceChapterId)?.id ?? "";
-    if (!fallbackChapterId) {
-      return;
-    }
+      orderedChapters.find((chapter) => chapter.id !== sourceChapterId)?.id ?? null;
 
     setActionError(null);
     setStoryDiagnosticError(null);
@@ -1094,7 +1093,7 @@ export function StoryOverviewView() {
       setActionError(
         error instanceof Error
           ? error.message
-          : "NovelForge could not move this scene onto the target chapter spine.",
+          : "NovelForge could not move this scene to the selected destination.",
       );
     } finally {
       setMovingChapterSceneId(null);
@@ -1850,9 +1849,18 @@ export function StoryOverviewView() {
               const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
               const isFirstChapter = currentChapterIndex === 0;
               const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
-              const chapterMoveDestinations = orderedChapters.filter(
-                (candidate) => candidate.id !== chapter.id,
-              );
+              const chapterMoveDestinations = [
+                ...orderedChapters
+                  .filter((candidate) => candidate.id !== chapter.id)
+                  .map((candidate) => ({
+                    id: candidate.id,
+                    label: candidate.title,
+                  })),
+                {
+                  id: null,
+                  label: "Unassigned",
+                },
+              ];
               return (
                 <article
                   key={chapter.id}
@@ -1959,7 +1967,8 @@ export function StoryOverviewView() {
                         </p>
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
                           Open any scene workspace directly from the chapter flow, or
-                          move a scene into another chapter without leaving Story Spine.
+                          move a scene into another chapter or back to Unassigned
+                          without leaving Story Spine.
                         </p>
                       </div>
 
@@ -2009,11 +2018,8 @@ export function StoryOverviewView() {
                                           chapter.id,
                                         )
                                       }
-                                      disabled={
-                                        isMutatingStructure ||
-                                        chapterMoveDestinations.length === 0
-                                      }
-                                      aria-label={`Move ${scene.title} to another chapter`}
+                                      disabled={isMutatingStructure}
+                                      aria-label={`Move ${scene.title} to another chapter or unassigned`}
                                     >
                                       Move...
                                     </Button>
@@ -2038,21 +2044,27 @@ export function StoryOverviewView() {
                                 </div>
 
                                 {isMovingChapterScene && chapterSceneMoveDraft ? (
-                                  <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
-                                    <div className="grid gap-3 lg:grid-cols-2">
+                                    <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
+                                      <div className="grid gap-3 lg:grid-cols-2">
                                       <Field
-                                        label="Move Into Chapter"
-                                        hint="Choose the destination chapter"
+                                        label="Move Destination"
+                                        hint="Choose the destination chapter or unassigned bucket"
                                       >
                                         <Select
-                                          value={chapterSceneMoveDraft.targetChapterId}
+                                          value={
+                                            chapterSceneMoveDraft.targetChapterId ??
+                                            UNASSIGNED_DESTINATION_VALUE
+                                          }
                                           onChange={(event) =>
                                             setChapterSceneMoveDraft((currentDraft) =>
                                               currentDraft?.sceneId === scene.id
                                                 ? buildChapterSceneMoveDraft(
                                                     scene.id,
                                                     chapter.id,
-                                                    event.target.value,
+                                                    event.target.value ===
+                                                      UNASSIGNED_DESTINATION_VALUE
+                                                      ? null
+                                                      : event.target.value,
                                                     currentDraft.placement,
                                                     currentDraft.anchorSceneId,
                                                   )
@@ -2061,8 +2073,17 @@ export function StoryOverviewView() {
                                           }
                                         >
                                           {chapterMoveDestinations.map((candidate) => (
-                                            <option key={candidate.id} value={candidate.id}>
-                                              {candidate.title}
+                                            <option
+                                              key={
+                                                candidate.id ??
+                                                UNASSIGNED_DESTINATION_VALUE
+                                              }
+                                              value={
+                                                candidate.id ??
+                                                UNASSIGNED_DESTINATION_VALUE
+                                              }
+                                            >
+                                              {candidate.label}
                                             </option>
                                           ))}
                                         </Select>
@@ -2142,12 +2163,12 @@ export function StoryOverviewView() {
 
                                     <p className="mt-2 text-sm text-[var(--ink-muted)]">
                                       {chapterSceneMoveDraft.placement === "start"
-                                        ? `The scene will be inserted at the beginning of ${targetChapter?.title ?? "the selected chapter"}.`
+                                        ? `The scene will be inserted at the beginning of ${targetChapter?.title ?? "the unassigned scene list"}.`
                                         : chapterSceneMoveDraft.placement === "end"
-                                          ? `The scene will be inserted at the end of ${targetChapter?.title ?? "the selected chapter"}.`
+                                          ? `The scene will be inserted at the end of ${targetChapter?.title ?? "the unassigned scene list"}.`
                                           : chapterSceneMoveDraft.placement === "before"
-                                            ? `The scene will be inserted before ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`
-                                            : `The scene will be inserted after ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`}{" "}
+                                            ? `The scene will be inserted before ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the unassigned scene list"}.`
+                                            : `The scene will be inserted after ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the unassigned scene list"}.`}{" "}
                                       NovelForge will persist that choice through the saved
                                       backend order.
                                     </p>
@@ -2168,7 +2189,7 @@ export function StoryOverviewView() {
                                         }
                                         disabled={isMutatingStructure}
                                       >
-                                        Move to Chapter
+                                        Move Scene
                                       </Button>
                                     </div>
                                   </div>

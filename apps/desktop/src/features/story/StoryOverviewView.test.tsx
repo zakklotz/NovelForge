@@ -1274,7 +1274,7 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
 
     await waitFor(() => {
       expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
@@ -1330,7 +1330,7 @@ describe("StoryOverviewView", () => {
     fireEvent.change(screen.getByLabelText(/before scene/i), {
       target: { value: "scene-4" },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
 
     await waitFor(() => {
       expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
@@ -1365,7 +1365,7 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
 
     await waitFor(() => {
       expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
@@ -1373,6 +1373,132 @@ describe("StoryOverviewView", () => {
 
     expect((screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value).toBe(
       "A courier shifts one chapter scene while the top-level spine intent keeps changing.",
+    );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a chapter scene to unassigned through the backend move command", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/move destination/i), {
+      target: { value: "__unassigned__" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: null,
+      targetIndex: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a chapter scene after a selected unassigned scene through the backend move command", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned-1", 0, "Ashfall Detour"),
+        createUnassignedScene("scene-unassigned-2", 1, "Glass Harbor"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    const moveButton = screen.getByRole("button", {
+      name: /move dock nine exchange to another chapter or unassigned/i,
+    });
+    const sceneCard = moveButton.closest("div.rounded-2xl");
+    if (!sceneCard) {
+      throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
+    }
+
+    fireEvent.click(
+      within(sceneCard).getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+    fireEvent.change(within(sceneCard).getByLabelText(/move destination/i), {
+      target: { value: "__unassigned__" },
+    });
+    fireEvent.change(within(sceneCard).getByLabelText(/insert position/i), {
+      target: { value: "after" },
+    });
+    fireEvent.change(within(sceneCard).getByLabelText(/after scene/i), {
+      target: { value: "scene-unassigned-1" },
+    });
+    fireEvent.click(within(sceneCard).getByRole("button", { name: "Move Scene" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: null,
+      targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved story brief edits in place when moving a chapter scene to unassigned refreshes the snapshot", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value: "A courier moves one chapter scene back to unassigned while the top-level brief keeps changing.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/move destination/i), {
+      target: { value: "__unassigned__" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect((screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value).toBe(
+      "A courier moves one chapter scene back to unassigned while the top-level brief keeps changing.",
     );
 
     unmount();
