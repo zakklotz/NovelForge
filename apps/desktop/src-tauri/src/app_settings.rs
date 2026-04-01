@@ -108,14 +108,15 @@ fn load_stored_settings(app: &AppHandle) -> Result<StoredAppSettings> {
         return Ok(default_stored_settings());
     }
 
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let raw =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
     serde_json::from_str(&raw).context("Failed to parse app settings JSON.")
 }
 
 fn save_stored_settings(app: &AppHandle, settings: &StoredAppSettings) -> Result<()> {
     let path = settings_path(app)?;
-    let raw = serde_json::to_string_pretty(settings).context("Failed to serialize app settings.")?;
+    let raw =
+        serde_json::to_string_pretty(settings).context("Failed to serialize app settings.")?;
     fs::write(&path, raw).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
@@ -126,8 +127,8 @@ fn load_fallback_secrets(app: &AppHandle) -> Result<StoredSecrets> {
         return Ok(StoredSecrets::default());
     }
 
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let raw =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
     serde_json::from_str(&raw).context("Failed to parse AI secrets JSON.")
 }
 
@@ -145,7 +146,10 @@ fn save_fallback_secrets(app: &AppHandle, secrets: &StoredSecrets) -> Result<()>
 }
 
 fn get_fallback_secret(app: &AppHandle, provider_id: &str) -> Result<Option<String>> {
-    Ok(load_fallback_secrets(app)?.providers.get(provider_id).cloned())
+    Ok(load_fallback_secrets(app)?
+        .providers
+        .get(provider_id)
+        .cloned())
 }
 
 fn set_fallback_secret(app: &AppHandle, provider_id: &str, value: &str) -> Result<()> {
@@ -313,7 +317,10 @@ mod tests {
     fn default_settings_choose_gemini_as_primary_provider() {
         let settings = default_app_settings();
         assert_eq!(settings.ai.default_provider, "gemini");
-        assert_eq!(settings.ai.providers.gemini.default_model, "gemini-2.5-flash");
+        assert_eq!(
+            settings.ai.providers.gemini.default_model,
+            "gemini-2.5-flash"
+        );
     }
 
     #[test]

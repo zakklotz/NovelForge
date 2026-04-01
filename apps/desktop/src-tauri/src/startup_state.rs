@@ -33,15 +33,14 @@ fn load_startup_state(app: &AppHandle) -> Result<StoredStartupState> {
         return Ok(StoredStartupState::default());
     }
 
-    let raw = fs::read_to_string(&path)
-        .with_context(|| format!("Failed to read {}", path.display()))?;
+    let raw =
+        fs::read_to_string(&path).with_context(|| format!("Failed to read {}", path.display()))?;
     serde_json::from_str(&raw).context("Failed to parse startup state JSON.")
 }
 
 fn save_startup_state(app: &AppHandle, state: &StoredStartupState) -> Result<()> {
     let path = startup_state_path(app)?;
-    let raw =
-        serde_json::to_string_pretty(state).context("Failed to serialize startup state.")?;
+    let raw = serde_json::to_string_pretty(state).context("Failed to serialize startup state.")?;
     fs::write(&path, raw).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())
 }
@@ -56,16 +55,14 @@ pub fn remember_last_project(app: &AppHandle, path: &Path) -> Result<()> {
 }
 
 pub fn load_last_project(app: &AppHandle) -> Result<Option<PathBuf>> {
-    Ok(load_startup_state(app)?
-        .last_project_path
-        .and_then(|path| {
-            let trimmed = path.trim();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(PathBuf::from(trimmed))
-            }
-        }))
+    Ok(load_startup_state(app)?.last_project_path.and_then(|path| {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(PathBuf::from(trimmed))
+        }
+    }))
 }
 
 pub fn clear_last_project(app: &AppHandle) -> Result<()> {

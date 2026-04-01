@@ -421,6 +421,82 @@ fn build_project_brief_context(snapshot: &ProjectSnapshot) -> Value {
     })
 }
 
+fn push_story_brief_field(lines: &mut Vec<String>, label: &str, value: &str) {
+    let trimmed = value.trim();
+    if !trimmed.is_empty() {
+        lines.push(format!("- {}: {}", label, trimmed));
+    }
+}
+
+fn build_structured_story_brief_guidance(snapshot: &ProjectSnapshot, action: &str) -> String {
+    let project = &snapshot.project;
+    let mut anchors = Vec::new();
+
+    match action {
+        "story-diagnose-structure" => {
+            push_story_brief_field(&mut anchors, "Logline", &project.logline);
+            push_story_brief_field(&mut anchors, "Premise", &project.premise);
+            push_story_brief_field(&mut anchors, "Central conflict", &project.central_conflict);
+            push_story_brief_field(&mut anchors, "Thematic intent", &project.thematic_intent);
+            push_story_brief_field(&mut anchors, "Ending direction", &project.ending_direction);
+            push_story_brief_field(&mut anchors, "Genre", &project.genre);
+            push_story_brief_field(&mut anchors, "Tone", &project.tone);
+        }
+        "chapter-propose-scenes" => {
+            push_story_brief_field(&mut anchors, "Logline", &project.logline);
+            push_story_brief_field(&mut anchors, "Premise", &project.premise);
+            push_story_brief_field(&mut anchors, "Central conflict", &project.central_conflict);
+            push_story_brief_field(&mut anchors, "Thematic intent", &project.thematic_intent);
+            push_story_brief_field(&mut anchors, "Ending direction", &project.ending_direction);
+            push_story_brief_field(&mut anchors, "Genre", &project.genre);
+            push_story_brief_field(&mut anchors, "Tone", &project.tone);
+        }
+        "scene-generate-beats" | "scene-expand-draft" => {
+            push_story_brief_field(&mut anchors, "Premise", &project.premise);
+            push_story_brief_field(&mut anchors, "Central conflict", &project.central_conflict);
+            push_story_brief_field(&mut anchors, "Thematic intent", &project.thematic_intent);
+            push_story_brief_field(&mut anchors, "Ending direction", &project.ending_direction);
+            push_story_brief_field(&mut anchors, "Genre", &project.genre);
+            push_story_brief_field(&mut anchors, "Tone", &project.tone);
+        }
+        _ => {}
+    }
+
+    let usage_note = match action {
+        "story-diagnose-structure" => {
+            "Evaluate the spine not just for generic structure, but for whether its current chapters and scenes seem positioned to deliver on these saved story-intent anchors when relevant."
+        }
+        "chapter-propose-scenes" => {
+            "Use the saved story brief as a story-intent north star. Propose scenes that help this chapter advance the premise and central conflict while staying compatible with the thematic intent, ending direction, genre, and tone when those anchors matter."
+        }
+        "scene-generate-beats" => {
+            "Use the saved story brief to shape what this scene should be doing beneath the surface. Let the brief influence the scene pressure, reversals, reveals, and exit change when that creates a clearer line back to the overall story intent."
+        }
+        "scene-expand-draft" => {
+            "Use the saved story brief to guide emphasis, emotional texture, and prose choices. Let genre and tone affect the page feel, and let premise, conflict, thematic intent, and ending direction influence what the scene highlights when relevant."
+        }
+        _ => "Use the saved story brief when it materially helps the requested action.",
+    };
+
+    if anchors.is_empty() {
+        return format!(
+            "Saved story brief guidance:\n\
+             - {}\n\
+             - No additional saved story brief anchors are currently filled beyond the project title, so fall back to the supplied structure and local planning context.",
+            usage_note
+        );
+    }
+
+    format!(
+        "Saved story brief guidance:\n\
+         - {}\n\
+         {}\n\
+         - Ignore blank or irrelevant story brief fields instead of forcing every field into the output.",
+        usage_note,
+        anchors.join("\n")
+    )
+}
+
 fn build_context_blob(snapshot: &ProjectSnapshot, context: &ScratchpadProjectContext) -> String {
     serde_json::to_string_pretty(&json!({
         "project": build_project_brief_context(snapshot),
@@ -767,16 +843,16 @@ New user input:\n{user_input}",
 fn structured_action_brief(action: &str) -> &'static str {
     match action {
         "story-diagnose-structure" => {
-            "Review the whole story spine for structural gaps, redundancy, and next planning targets."
+            "Review the whole story spine for structural gaps, redundancy, and next planning targets in light of the saved story brief."
         }
         "chapter-propose-scenes" => {
-            "Propose scene records that help the current chapter fulfill its planning role."
+            "Propose scene records that help the current chapter fulfill its planning role while staying aligned with the saved story brief."
         }
         "scene-generate-beats" => {
-            "Turn the current scene overview into a concise beat outline."
+            "Turn the current scene overview into a concise beat outline that stays aligned with the saved story brief."
         }
         "scene-expand-draft" => {
-            "Expand the current scene's plan into a rough, reviewable draft."
+            "Expand the current scene's plan into a rough, reviewable draft that reflects the saved story brief."
         }
         _ => "Help the user generate structured story-planning output.",
     }
@@ -842,6 +918,8 @@ Rules:\n\
 - Only fill the field or fields needed for the requested action.\n\
 - Leave unused arrays empty and unused strings blank.\n\
 - Ground every output in the supplied NovelForge context.\n\
+- Treat the saved project story brief as story-intent guidance when it is present and relevant.\n\
+- Use only the brief fields that materially help the requested action; ignore blank or noisy ones.\n\
 - Do not contradict existing chapter, scene, or character facts.\n\
 - For storyStructureDiagnostic entries, use chapter or scene refs whenever the issue points to a specific part of the spine.\n\
 - Keep storyStructureDiagnostic entries short, concrete, and review-oriented.\n\
@@ -857,6 +935,7 @@ fn build_structured_user_prompt(
     snapshot: &ProjectSnapshot,
     input: &RunStructuredAIActionInput,
 ) -> Result<String> {
+    let story_brief_guidance = build_structured_story_brief_guidance(snapshot, &input.action);
     let workspace_context = if input.workspace_context.trim().is_empty() {
         String::new()
     } else {
@@ -870,8 +949,11 @@ fn build_structured_user_prompt(
         "story-diagnose-structure" => Ok(format!(
             "Action: diagnose the whole story structure.\n\
 Context:\n{context}\n\n\
+{story_brief_guidance}\n\n\
 Task:\n\
 - Review the current story spine at the chapter and scene planning level, not as prose critique.\n\
+- Evaluate structural concerns in light of the saved story brief where that adds useful signal, especially premise, central conflict, thematic intent, ending direction, genre, and tone when present.\n\
+- Do not force every brief field into the diagnosis. Only call out mismatches or missing support when the current spine genuinely seems out of step with the saved story intent.\n\
 - Use result.storyStructureDiagnostic.underdefinedChapters for chapters that look thin, underdefined, or weakly supported by their current scenes.\n\
 - Use result.storyStructureDiagnostic.redundantFunctions for chapters or scenes that appear to serve the same function without enough escalation or differentiation.\n\
 - Use result.storyStructureDiagnostic.missingTransitions for missing handoffs, consequence beats, bridge scenes, or chapter-to-chapter transitions.\n\
@@ -881,6 +963,7 @@ Task:\n\
 - Limit each diagnostic section to the most useful 0 to 4 entries.\n\
 - Leave result.sceneProposals empty and result.beatOutline/result.manuscriptText blank for this action.{workspace_context}",
             context = build_story_structured_context(snapshot)?,
+            story_brief_guidance = story_brief_guidance,
         )),
         "chapter-propose-scenes" => {
             let chapter_id = input
@@ -891,14 +974,18 @@ Task:\n\
                 "Action: propose scenes for the target chapter.\n\
 Target chapter id: {chapter_id}\n\
 Context:\n{context}\n\n\
+{story_brief_guidance}\n\n\
 Task:\n\
 - Propose 2 to 5 scenes that belong in this specific chapter.\n\
 - Use the target chapter id for every sceneProposals[].chapterId value.\n\
 - Build on the chapter intent and current chapter scene list instead of duplicating what already exists.\n\
+- Make the proposals feel like they belong to this story, not just this slot in the structure. Use the saved story brief to help choose scenes that advance the premise and central conflict, while supporting thematic intent, ending direction, genre, and tone only where those anchors are useful.\n\
+- Avoid proposing scenes that satisfy chapter structure mechanically but drift away from the saved story intent.\n\
 - Keep each beatOutline concise, one beat per line.\n\
 - Leave result.beatOutline and result.manuscriptText blank for this action.\n\
 - Set manuscriptText inside each scene proposal to <p></p> unless a tiny opening sample is truly useful.{workspace_context}",
                 context = build_chapter_structured_context(snapshot, chapter_id)?,
+                story_brief_guidance = story_brief_guidance,
             ))
         }
         "scene-generate-beats" => {
@@ -910,12 +997,16 @@ Task:\n\
                 "Action: generate a beat outline for the target scene.\n\
 Target scene id: {scene_id}\n\
 Context:\n{context}\n\n\
+{story_brief_guidance}\n\n\
 Task:\n\
 - Write a beat outline for this scene using the overview, chapter placement, and character pressure.\n\
 - Produce 4 to 7 beats, one beat per line, in planning language rather than prose paragraphs.\n\
 - Focus on progression, reversals, reveals, and exit change.\n\
+- Use the saved story brief to sharpen the beat choices, especially premise, central conflict, thematic intent, ending direction, genre, and tone when those anchors help this particular scene.\n\
+- Do not bolt theme or genre labels onto every beat. Let the brief influence subtext, pressure, and the kind of turn the scene creates.\n\
 - Leave result.sceneProposals empty and result.manuscriptText blank for this action.{workspace_context}",
                 context = build_scene_structured_context(snapshot, scene_id)?,
+                story_brief_guidance = story_brief_guidance,
             ))
         }
         "scene-expand-draft" => {
@@ -927,13 +1018,17 @@ Task:\n\
                 "Action: expand the target scene into a rough draft.\n\
 Target scene id: {scene_id}\n\
 Context:\n{context}\n\n\
+{story_brief_guidance}\n\n\
 Task:\n\
 - Expand the current scene into rough-draft prose based primarily on the overview and beat outline.\n\
 - Return simple HTML paragraphs in result.manuscriptText using <p> tags only.\n\
 - Keep it compact and provisional: 4 to 8 short paragraphs, enough to create momentum without overpolishing.\n\
 - Preserve the scene's existing purpose, conflict, and outcome.\n\
+- Let the saved story brief guide what the draft emphasizes: premise and conflict should shape what feels important, thematic intent and ending direction should shape the scene's deeper meaning where natural, and genre/tone should shape the page feel.\n\
+- Avoid heavy exposition about the brief. The alignment should mostly show up through scene choices, emotional texture, and the kind of language the draft uses.\n\
 - Leave result.sceneProposals empty and result.beatOutline blank for this action.{workspace_context}",
                 context = build_scene_structured_context(snapshot, scene_id)?,
+                story_brief_guidance = story_brief_guidance,
             ))
         }
         _ => Err(anyhow!("Unsupported structured AI action: {}", input.action)),
@@ -1468,6 +1563,139 @@ pub async fn run_structured_ai_action(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::{
+        AutosaveState, PanelLayout, Project, ProjectSettings, ProjectState, ViewFilters,
+    };
+
+    fn sample_project_snapshot() -> ProjectSnapshot {
+        let timestamp = "2026-03-15T00:00:00.000Z".to_string();
+
+        ProjectSnapshot {
+            project: Project {
+                id: "project-ashen-sky".to_string(),
+                title: "Ashen Sky".to_string(),
+                logline: "A failed smuggler has one week to escort a living star-map through a collapsing empire.".to_string(),
+                premise: "A disgraced smuggler becomes guardian to a living star-map that could redraw power across a dying empire.".to_string(),
+                central_conflict: "Ava must keep the map alive and moving while every faction around her wants to own, weaponize, or silence it.".to_string(),
+                thematic_intent: "Test whether responsibility can become an act of freedom instead of another chain.".to_string(),
+                ending_direction: "Aim for a costly but hopeful ending where Ava chooses stewardship over escape.".to_string(),
+                genre: "Science-fantasy adventure".to_string(),
+                tone: "Tense, intimate, and wonder-struck under pressure.".to_string(),
+                audience_notes: "Adult crossover readers who want high-stakes plotting with character-forward emotional turns.".to_string(),
+                schema_version: 3,
+                settings: ProjectSettings {
+                    autosave_interval_ms: 1500,
+                    auto_analyze: true,
+                    editor_font_scale: 1.0,
+                },
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+                last_opened_at: timestamp.clone(),
+            },
+            chapters: vec![Chapter {
+                id: "chapter-1".to_string(),
+                project_id: "project-ashen-sky".to_string(),
+                title: "Chapter 1: The Wrong Package".to_string(),
+                summary: "Ava accepts a courier job she does not understand.".to_string(),
+                purpose: "Launch the novel's central threat and lock Ava into the mission."
+                    .to_string(),
+                major_events: vec!["Ava takes the job".to_string()],
+                emotional_movement: "Cynicism to alarm".to_string(),
+                character_focus_ids: vec!["char-ava".to_string()],
+                setup_payoff_notes: "The map hums when Ava lies.".to_string(),
+                order_index: 0,
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+            }],
+            scenes: vec![Scene {
+                id: "scene-1".to_string(),
+                project_id: "project-ashen-sky".to_string(),
+                chapter_id: Some("chapter-1".to_string()),
+                order_index: 0,
+                title: "Dock Nine Exchange".to_string(),
+                summary: "Ava meets the client and realizes the cargo is alive.".to_string(),
+                purpose: "Inciting incident".to_string(),
+                beat_outline:
+                    "Ava meets the client at Dock Nine.\nThe crate reacts to her touch."
+                        .to_string(),
+                conflict: "Ava wants a quick payout; the client keeps withholding facts."
+                    .to_string(),
+                outcome: "Ava takes the package anyway.".to_string(),
+                pov_character_id: Some("char-ava".to_string()),
+                location: "Dock Nine".to_string(),
+                time_label: "Night".to_string(),
+                involved_character_ids: vec!["char-ava".to_string()],
+                continuity_tags: vec!["star-map".to_string()],
+                dependency_scene_ids: vec![],
+                manuscript_text: "<p>Ava hated jobs that breathed.</p>".to_string(),
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+            }],
+            characters: vec![Character {
+                id: "char-ava".to_string(),
+                project_id: "project-ashen-sky".to_string(),
+                name: "Ava Voss".to_string(),
+                role: "Protagonist".to_string(),
+                personality_traits: vec!["defensive".to_string()],
+                motivations: "Clear her family debt and stop running.".to_string(),
+                fears: "Becoming responsible for something she cannot save.".to_string(),
+                worldview: "Systems are built to crush the people who trust them.".to_string(),
+                speaking_style: "Dry, clipped, reactive.".to_string(),
+                vocabulary_tendencies: "Short concrete nouns.".to_string(),
+                speech_rhythm: "Fast when cornered.".to_string(),
+                emotional_baseline: "Guarded vigilance.".to_string(),
+                relationships: vec![Relationship {
+                    character_id: "char-ava".to_string(),
+                    summary: "Knows herself badly but acts anyway.".to_string(),
+                }],
+                secrets: "She once betrayed a crew to save her brother.".to_string(),
+                arc_direction: "From self-protective survival to chosen responsibility."
+                    .to_string(),
+                contradictions:
+                    "Claims she does not care, repeatedly risks herself for strangers."
+                        .to_string(),
+                created_at: timestamp.clone(),
+                updated_at: timestamp.clone(),
+            }],
+            suggestions: vec![],
+            project_state: ProjectState {
+                project_id: "project-ashen-sky".to_string(),
+                last_route: "/story".to_string(),
+                open_scene_ids: vec![],
+                selected_ids: vec![],
+                view_filters: ViewFilters {
+                    active_chapter_id: None,
+                    search_text: String::new(),
+                    scene_character_id: None,
+                    scene_continuity_tag: None,
+                    suggestion_status: None,
+                },
+                panel_layout: PanelLayout {
+                    chapters_inspector_width: 360,
+                    scene_left_width: 320,
+                    scene_right_width: 360,
+                },
+                autosave_state: AutosaveState {
+                    is_saving: false,
+                    last_saved_at: Some(timestamp),
+                },
+                analysis_queue: vec![],
+                last_full_scan_at: None,
+            },
+        }
+    }
+
+    fn sample_structured_input(action: &str) -> RunStructuredAIActionInput {
+        RunStructuredAIActionInput {
+            project_id: "project-ashen-sky".to_string(),
+            provider_id: "gemini".to_string(),
+            model_id: "gemini-2.5-flash".to_string(),
+            action: action.to_string(),
+            chapter_id: Some("chapter-1".to_string()),
+            scene_id: Some("scene-1".to_string()),
+            workspace_context: String::new(),
+        }
+    }
 
     #[test]
     fn parser_extracts_structured_scratchpad_payload() {
@@ -1633,5 +1861,46 @@ mod tests {
             .story_structure_diagnostic
             .underdefined_chapters
             .is_empty());
+    }
+
+    #[test]
+    fn structured_story_diagnostic_prompt_calls_out_story_brief_alignment() {
+        let snapshot = sample_project_snapshot();
+        let prompt = build_structured_user_prompt(
+            &snapshot,
+            &sample_structured_input("story-diagnose-structure"),
+        )
+        .expect("story diagnostic prompt should build");
+
+        assert!(prompt.contains("Saved story brief guidance:"));
+        assert!(prompt.contains("Premise: A disgraced smuggler becomes guardian"));
+        assert!(prompt.contains("Central conflict: Ava must keep the map alive"));
+        assert!(prompt.contains("Evaluate structural concerns in light of the saved story brief"));
+        assert!(prompt.contains("Do not force every brief field into the diagnosis."));
+    }
+
+    #[test]
+    fn structured_scene_generation_prompts_focus_on_relevant_brief_fields() {
+        let snapshot = sample_project_snapshot();
+
+        let beats_prompt = build_structured_user_prompt(
+            &snapshot,
+            &sample_structured_input("scene-generate-beats"),
+        )
+        .expect("beat prompt should build");
+        let draft_prompt =
+            build_structured_user_prompt(&snapshot, &sample_structured_input("scene-expand-draft"))
+                .expect("draft prompt should build");
+
+        assert!(beats_prompt.contains("Saved story brief guidance:"));
+        assert!(beats_prompt.contains("Thematic intent: Test whether responsibility"));
+        assert!(beats_prompt.contains("Genre: Science-fantasy adventure"));
+        assert!(beats_prompt.contains("Do not bolt theme or genre labels onto every beat."));
+        assert!(!beats_prompt.contains("Audience notes"));
+
+        assert!(draft_prompt.contains("Saved story brief guidance:"));
+        assert!(draft_prompt.contains("Tone: Tense, intimate, and wonder-struck"));
+        assert!(draft_prompt.contains("Let the saved story brief guide what the draft emphasizes"));
+        assert!(draft_prompt.contains("Avoid heavy exposition about the brief."));
     }
 }
