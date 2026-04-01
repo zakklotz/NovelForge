@@ -1189,6 +1189,32 @@ describe("StoryOverviewView", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+    const otherSceneCard = screen
+      .getByRole("button", {
+        name: /open glass harbor/i,
+      })
+      .closest("div.rounded-3xl");
+    if (!(otherSceneCard instanceof HTMLElement)) {
+      throw new Error("Expected unrelated unassigned Story Spine scene card for Glass Harbor.");
+    }
+
+    const otherMoveIntoChapter = within(otherSceneCard).getByLabelText(
+      /move into chapter/i,
+    ) as HTMLSelectElement;
+    expect(
+      (within(otherSceneCard).getByRole("button", {
+        name: /open glass harbor/i,
+      }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(otherMoveIntoChapter.disabled).toBe(false);
+    fireEvent.change(otherMoveIntoChapter, {
+      target: { value: "chapter-2" },
+    });
+    expect(otherMoveIntoChapter.value).toBe("chapter-2");
+    expect(
+      (within(otherSceneCard).getByRole("button", { name: "Move to Chapter" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
 
     pendingMove.resolve();
 
@@ -1613,6 +1639,13 @@ describe("StoryOverviewView", () => {
         }) as HTMLButtonElement
       ).disabled,
     ).toBe(true);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /open the crate speaks/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(false);
 
     pendingMove.resolve();
 

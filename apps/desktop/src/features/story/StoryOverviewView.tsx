@@ -753,11 +753,14 @@ export function StoryOverviewView() {
     0,
   );
   const filledStoryBriefFieldCount = countFilledStoryBriefFields(storyBrief);
+  const isMutatingStorySpineChapters =
+    isAddingChapter || movingChapterId !== null;
+  const activeStorySpineSceneUpdate =
+    movingChapterScene ?? movingUnassignedScene;
+  const activeStorySpineSceneId = activeStorySpineSceneUpdate?.sceneId ?? null;
+  const isMutatingStorySpineScenes = activeStorySpineSceneId !== null;
   const isMutatingStructure =
-    isAddingChapter ||
-    movingChapterId !== null ||
-    movingChapterScene !== null ||
-    movingUnassignedScene !== null;
+    isMutatingStorySpineChapters || isMutatingStorySpineScenes;
   const hasVisiblePlanningEntries =
     filteredChapters.length > 0 || filteredUnassignedScenes.length > 0;
   const chapterSceneMoveTargetScenes = chapterSceneMoveDraft
@@ -1738,6 +1741,10 @@ export function StoryOverviewView() {
                     const unassignedSceneUpdateLabel = unassignedSceneUpdateAction
                       ? getStorySpineSceneUpdateLabel(unassignedSceneUpdateAction)
                       : null;
+                    const isUnassignedSceneCardLocked =
+                      isMutatingStorySpineChapters || isUpdatingUnassignedScene;
+                    const areUnassignedSceneMutationActionsDisabled =
+                      isMutatingStorySpineChapters || isMutatingStorySpineScenes;
 
                     return (
                       <div
@@ -1773,7 +1780,10 @@ export function StoryOverviewView() {
                               onClick={() =>
                                 void handleMoveUnassignedScene(scene.id, "earlier")
                               }
-                              disabled={isMutatingStructure || isFirstUnassigned}
+                              disabled={
+                                areUnassignedSceneMutationActionsDisabled ||
+                                isFirstUnassigned
+                              }
                               aria-label={`Move ${scene.title} earlier in unassigned`}
                             >
                               <ArrowUp className="size-4" />
@@ -1785,7 +1795,10 @@ export function StoryOverviewView() {
                               onClick={() =>
                                 void handleMoveUnassignedScene(scene.id, "later")
                               }
-                              disabled={isMutatingStructure || isLastUnassigned}
+                              disabled={
+                                areUnassignedSceneMutationActionsDisabled ||
+                                isLastUnassigned
+                              }
                               aria-label={`Move ${scene.title} later in unassigned`}
                             >
                               <ArrowDown className="size-4" />
@@ -1801,7 +1814,7 @@ export function StoryOverviewView() {
                                   params: { sceneId: scene.id },
                                 });
                               }}
-                              disabled={isMutatingStructure}
+                              disabled={isUnassignedSceneCardLocked}
                               aria-label={`Open ${scene.title}`}
                             >
                               <ChevronRight className="size-4" />
@@ -1819,7 +1832,7 @@ export function StoryOverviewView() {
                               >
                                 <Select
                                   value={targetChapterId}
-                                  disabled={isMutatingStructure}
+                                  disabled={isUnassignedSceneCardLocked}
                                   onChange={(event) =>
                                     setUnassignedMoveDrafts((currentDrafts) => ({
                                       ...currentDrafts,
@@ -1842,7 +1855,7 @@ export function StoryOverviewView() {
                               <Field label="Insert Position">
                                 <Select
                                   value={moveDraft?.placement ?? "end"}
-                                  disabled={isMutatingStructure}
+                                  disabled={isUnassignedSceneCardLocked}
                                   onChange={(event) =>
                                     setUnassignedMoveDrafts((currentDrafts) => ({
                                       ...currentDrafts,
@@ -1867,7 +1880,10 @@ export function StoryOverviewView() {
 
                               <Button
                                 onClick={() => void handleAssignUnassignedScene(scene.id)}
-                                disabled={!targetChapterId || isMutatingStructure}
+                                disabled={
+                                  !targetChapterId ||
+                                  areUnassignedSceneMutationActionsDisabled
+                                }
                               >
                                 {unassignedSceneUpdateAction === "move"
                                   ? "Moving..."
@@ -1887,7 +1903,7 @@ export function StoryOverviewView() {
                                 >
                                   <Select
                                     value={moveDraft.anchorSceneId}
-                                    disabled={isMutatingStructure}
+                                    disabled={isUnassignedSceneCardLocked}
                                     onChange={(event) =>
                                       setUnassignedMoveDrafts((currentDrafts) => ({
                                         ...currentDrafts,
@@ -2093,6 +2109,11 @@ export function StoryOverviewView() {
                             const chapterSceneUpdateLabel = chapterSceneUpdateAction
                               ? getStorySpineSceneUpdateLabel(chapterSceneUpdateAction)
                               : null;
+                            const isChapterSceneCardLocked =
+                              isMutatingStorySpineChapters || isUpdatingChapterScene;
+                            const areChapterSceneMutationActionsDisabled =
+                              isMutatingStorySpineChapters ||
+                              isMutatingStorySpineScenes;
                             const targetChapterScenes = isMovingChapterScene
                               ? chapterSceneMoveTargetScenes
                               : [];
@@ -2140,7 +2161,10 @@ export function StoryOverviewView() {
                                           "earlier",
                                         )
                                       }
-                                      disabled={isMutatingStructure || isFirstChapterScene}
+                                      disabled={
+                                        areChapterSceneMutationActionsDisabled ||
+                                        isFirstChapterScene
+                                      }
                                       aria-label={`Move ${scene.title} earlier in ${chapter.title}`}
                                     >
                                       <ArrowUp className="size-4" />
@@ -2157,7 +2181,10 @@ export function StoryOverviewView() {
                                           "later",
                                         )
                                       }
-                                      disabled={isMutatingStructure || isLastChapterScene}
+                                      disabled={
+                                        areChapterSceneMutationActionsDisabled ||
+                                        isLastChapterScene
+                                      }
                                       aria-label={`Move ${scene.title} later in ${chapter.title}`}
                                     >
                                       <ArrowDown className="size-4" />
@@ -2173,7 +2200,7 @@ export function StoryOverviewView() {
                                           chapter.id,
                                         )
                                       }
-                                      disabled={isMutatingStructure}
+                                      disabled={areChapterSceneMutationActionsDisabled}
                                       aria-label={`Move ${scene.title} to another chapter or unassigned`}
                                     >
                                       Move...
@@ -2189,7 +2216,7 @@ export function StoryOverviewView() {
                                           params: { sceneId: scene.id },
                                         });
                                       }}
-                                      disabled={isMutatingStructure}
+                                      disabled={isChapterSceneCardLocked}
                                       aria-label={`Open ${scene.title}`}
                                     >
                                       <ChevronRight className="size-4" />
@@ -2210,7 +2237,7 @@ export function StoryOverviewView() {
                                             chapterSceneMoveDraft.targetChapterId ??
                                             UNASSIGNED_DESTINATION_VALUE
                                           }
-                                          disabled={isMutatingStructure}
+                                          disabled={isChapterSceneCardLocked}
                                           onChange={(event) =>
                                             setChapterSceneMoveDraft((currentDraft) =>
                                               currentDraft?.sceneId === scene.id
@@ -2248,7 +2275,7 @@ export function StoryOverviewView() {
                                       <Field label="Insert Position">
                                         <Select
                                           value={chapterSceneMoveDraft.placement}
-                                          disabled={isMutatingStructure}
+                                          disabled={isChapterSceneCardLocked}
                                           onChange={(event) =>
                                             setChapterSceneMoveDraft((currentDraft) =>
                                               currentDraft?.sceneId === scene.id
@@ -2292,7 +2319,7 @@ export function StoryOverviewView() {
                                         >
                                           <Select
                                             value={chapterSceneMoveDraft.anchorSceneId}
-                                            disabled={isMutatingStructure}
+                                            disabled={isChapterSceneCardLocked}
                                             onChange={(event) =>
                                               setChapterSceneMoveDraft((currentDraft) =>
                                                 currentDraft?.sceneId === scene.id
@@ -2345,7 +2372,7 @@ export function StoryOverviewView() {
                                         onClick={() =>
                                           void handleMoveChapterSceneToChapter(scene.id)
                                         }
-                                        disabled={isMutatingStructure}
+                                        disabled={areChapterSceneMutationActionsDisabled}
                                       >
                                         {chapterSceneUpdateAction === "move"
                                           ? "Moving..."
