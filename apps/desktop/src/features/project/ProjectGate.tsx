@@ -6,39 +6,22 @@ import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CreateProjectInput, ProjectSnapshot } from "@novelforge/domain";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { Button, EmptyState, Field, Input, Panel, Textarea } from "@/components/ui";
+import { Button, EmptyState, Panel } from "@/components/ui";
 import { useUiStore } from "@/store/uiStore";
 import { resolveProjectRouteNavigation } from "@/lib/routes";
 import { AppShell } from "./AppShell";
 import { SettingsView } from "@/features/settings/SettingsView";
+import {
+  CreateProjectSurface,
+  emptyProjectCreationSeedState,
+  type ProjectCreationSeedState,
+} from "./CreateProjectSurface";
 
 const MENU_EVENT_NEW_PROJECT = "novelforge://new-project";
 const MENU_EVENT_OPEN_PROJECT = "novelforge://open-project";
 const MENU_EVENT_CLOSE_PROJECT = "novelforge://close-project";
 const MENU_EVENT_OPEN_SETTINGS = "novelforge://open-settings";
 const CLOSE_APP_TARGET_LABEL = "close NovelForge";
-
-interface ProjectCreationSeedState {
-  title: string;
-  logline: string;
-  premise: string;
-  centralConflict: string;
-  thematicIntent: string;
-  genre: string;
-  tone: string;
-}
-
-function emptyProjectCreationSeedState(): ProjectCreationSeedState {
-  return {
-    title: "",
-    logline: "",
-    premise: "",
-    centralConflict: "",
-    thematicIntent: "",
-    genre: "",
-    tone: "",
-  };
-}
 
 function StartupState({
   projectSeed,
@@ -70,134 +53,76 @@ function StartupState({
             description="NovelForge is looking for a valid last-opened workspace."
           />
         ) : (
-          <div className="space-y-6">
-            <div>
-              <h2 className="text-2xl font-semibold text-[var(--ink)]">No project open</h2>
-              <p className="mt-2 text-sm text-[var(--ink-muted)]">
+          <CreateProjectSurface
+            title="No project open"
+            description={
+              <>
                 Use File -&gt; New Project or File -&gt; Open Project to enter the
-                workspace. AI provider configuration stays in Settings, not in
-                the startup flow.
-              </p>
-            </div>
-
-            <Field label="New Project Title" hint="Required">
-              <Input
-                placeholder="Untitled Novel"
-                value={projectSeed.title}
-                onChange={(event) => onProjectSeedChange("title", event.target.value)}
-              />
-            </Field>
-
-            <div className="rounded-[1.5rem] border border-black/8 bg-white/55 px-4 py-4">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <p className="text-sm font-semibold text-[var(--ink)]">Story Brief Seed</p>
-                  <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                    Start with a few high-value story anchors now, then continue shaping the brief
-                    from Story.
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  onClick={() => onToggleOptionalStoryAnchors()}
-                  disabled={isBusy}
-                >
-                  {showOptionalStoryAnchors
-                    ? "Hide Optional Anchors"
-                    : "Add Optional Anchors"}
-                </Button>
-              </div>
-
-              <div className="mt-4 grid gap-4">
-                <Field label="Logline" hint="Optional, 1-2 sentences">
-                  <Textarea
-                    rows={3}
-                    value={projectSeed.logline}
-                    onChange={(event) => onProjectSeedChange("logline", event.target.value)}
-                    placeholder="Who wants what, what stands in the way, and why it matters."
-                  />
-                </Field>
-
-                <div className="grid gap-4 xl:grid-cols-2">
-                  <Field label="Premise" hint="Optional">
-                    <Textarea
-                      rows={4}
-                      value={projectSeed.premise}
-                      onChange={(event) => onProjectSeedChange("premise", event.target.value)}
-                      placeholder="State the core setup the story is built around."
-                    />
-                  </Field>
-
-                  <Field label="Central Conflict" hint="Optional">
-                    <Textarea
-                      rows={4}
-                      value={projectSeed.centralConflict}
-                      onChange={(event) =>
-                        onProjectSeedChange("centralConflict", event.target.value)
-                      }
-                      placeholder="Name the pressure, opposition, or impossible bind driving the story."
-                    />
-                  </Field>
-                </div>
-
-                {showOptionalStoryAnchors ? (
-                  <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(220px,0.8fr)_minmax(220px,0.8fr)]">
-                    <Field label="Thematic Intent" hint="Optional">
-                      <Textarea
-                        rows={3}
-                        value={projectSeed.thematicIntent}
-                        onChange={(event) =>
-                          onProjectSeedChange("thematicIntent", event.target.value)
-                        }
-                        placeholder="Describe the human question or tension the story wants to test."
-                      />
-                    </Field>
-
-                    <Field label="Genre" hint="Optional">
-                      <Input
-                        value={projectSeed.genre}
-                        onChange={(event) => onProjectSeedChange("genre", event.target.value)}
-                        placeholder="Science-fantasy adventure"
-                      />
-                    </Field>
-
-                    <Field label="Tone" hint="Optional">
-                      <Input
-                        value={projectSeed.tone}
-                        onChange={(event) => onProjectSeedChange("tone", event.target.value)}
-                        placeholder="Tense and wonder-struck"
-                      />
-                    </Field>
-                  </div>
-                ) : null}
-              </div>
-            </div>
-
-            <p className="text-sm text-[var(--ink-muted)]">
-              Keep it light if you want. Anything beyond the title can be skipped and refined later
-              in the Story workspace.
-            </p>
-
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={() => onCreateProject()} disabled={isBusy}>
-                New Project
-              </Button>
-              <Button
-                variant="secondary"
-                onClick={() => onOpenProject()}
-                disabled={isBusy}
-              >
+                workspace. AI provider configuration stays in Settings, not in the startup flow.
+              </>
+            }
+            projectSeed={projectSeed}
+            onProjectSeedChange={onProjectSeedChange}
+            showOptionalStoryAnchors={showOptionalStoryAnchors}
+            onToggleOptionalStoryAnchors={onToggleOptionalStoryAnchors}
+            onSubmit={onCreateProject}
+            secondaryAction={
+              <Button variant="secondary" onClick={() => void onOpenProject()} disabled={isBusy}>
                 Open Project
               </Button>
-            </div>
-
-            {errorMessage ? (
-              <Panel className="bg-[color:rgba(174,67,45,0.1)]">
-                <p className="text-sm text-[var(--danger)]">{errorMessage}</p>
-              </Panel>
-            ) : null}
-          </div>
+            }
+            isBusy={isBusy}
+            errorMessage={errorMessage}
+          />
         )}
+      </Panel>
+    </div>
+  );
+}
+
+function CreateProjectDialog({
+  projectSeed,
+  onProjectSeedChange,
+  showOptionalStoryAnchors,
+  onToggleOptionalStoryAnchors,
+  onCreateProject,
+  onCancel,
+  isBusy,
+  errorMessage,
+}: {
+  projectSeed: ProjectCreationSeedState;
+  onProjectSeedChange: (field: keyof ProjectCreationSeedState, value: string) => void;
+  showOptionalStoryAnchors: boolean;
+  onToggleOptionalStoryAnchors: () => void;
+  onCreateProject: () => Promise<void>;
+  onCancel: () => void;
+  isBusy: boolean;
+  errorMessage: string | null;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(32,22,14,0.4)] p-4 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-label="Create a new project"
+    >
+      <Panel className="w-full max-w-3xl shadow-[0_30px_80px_rgba(24,17,10,0.3)]">
+        <CreateProjectSurface
+          title="New Project"
+          description="Start with a title and a few high-value story anchors, then continue shaping the brief from Story once the project opens."
+          projectSeed={projectSeed}
+          onProjectSeedChange={onProjectSeedChange}
+          showOptionalStoryAnchors={showOptionalStoryAnchors}
+          onToggleOptionalStoryAnchors={onToggleOptionalStoryAnchors}
+          onSubmit={onCreateProject}
+          secondaryAction={
+            <Button variant="ghost" onClick={onCancel} disabled={isBusy}>
+              Cancel
+            </Button>
+          }
+          isBusy={isBusy}
+          errorMessage={errorMessage}
+        />
       </Panel>
     </div>
   );
@@ -217,6 +142,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     emptyProjectCreationSeedState,
   );
   const [showOptionalStoryAnchors, setShowOptionalStoryAnchors] = useState(false);
+  const [isCreateProjectDialogOpen, setIsCreateProjectDialogOpen] = useState(false);
   const [isStartingProject, setIsStartingProject] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -249,6 +175,12 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
       setProjectSeed((current) => ({ ...current, [field]: value }));
     },
   );
+
+  const resetProjectCreationState = useEffectEvent(() => {
+    setProjectSeed(emptyProjectCreationSeedState());
+    setShowOptionalStoryAnchors(false);
+    setStartupError(null);
+  });
 
   const runProtectedProjectAction = useEffectEvent(
     async (targetLabel: string, action: () => Promise<void>) => {
@@ -294,8 +226,8 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
         };
 
         const snapshot = await createProject(input);
-        setProjectSeed(emptyProjectCreationSeedState());
-        setShowOptionalStoryAnchors(false);
+        resetProjectCreationState();
+        setIsCreateProjectDialogOpen(false);
         await openWorkspace(snapshot.projectState.lastRoute, snapshot);
       } catch (error) {
         setStartupError(
@@ -308,6 +240,20 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
         setIsRestoring(false);
       }
     });
+  });
+
+  const handleStartNewProjectFlow = useEffectEvent(async () => {
+    setStartupError(null);
+
+    if (!currentProjectId) {
+      setIsCreateProjectDialogOpen(false);
+      if (pathname !== "/") {
+        await navigate({ to: "/" });
+      }
+      return;
+    }
+
+    setIsCreateProjectDialogOpen(true);
   });
 
   const handleOpenProject = useEffectEvent(async () => {
@@ -328,6 +274,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
         }
 
         const snapshot = await openProject({ path });
+        setIsCreateProjectDialogOpen(false);
         await openWorkspace(snapshot.projectState.lastRoute, snapshot);
       } catch (error) {
         setStartupError(
@@ -345,6 +292,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const handleCloseProject = useEffectEvent(async () => {
     await runProtectedProjectAction("close the current project", async () => {
       await closeProject();
+      setIsCreateProjectDialogOpen(false);
       setStartupError(null);
       await navigate({ to: "/" });
     });
@@ -409,7 +357,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
 
     void Promise.all([
       listen(MENU_EVENT_NEW_PROJECT, () => {
-        void handleCreateProject();
+        void handleStartNewProjectFlow();
       }),
       listen(MENU_EVENT_OPEN_PROJECT, () => {
         void handleOpenProject();
@@ -434,9 +382,9 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     };
   }, [
     handleCloseProject,
-    handleCreateProject,
     handleOpenProject,
     handleOpenSettings,
+    handleStartNewProjectFlow,
   ]);
 
   useEffect(() => {
@@ -524,9 +472,29 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <AppShell snapshot={snapshotQuery.data ?? null}>
-      {!currentProjectId && pathname !== "/settings" ? (
-        <StartupState
+    <>
+      <AppShell snapshot={snapshotQuery.data ?? null}>
+        {!currentProjectId && pathname !== "/settings" ? (
+          <StartupState
+            projectSeed={projectSeed}
+            onProjectSeedChange={updateProjectSeedField}
+            showOptionalStoryAnchors={showOptionalStoryAnchors}
+            onToggleOptionalStoryAnchors={() =>
+              setShowOptionalStoryAnchors((current) => !current)
+            }
+            onCreateProject={handleCreateProject}
+            onOpenProject={handleOpenProject}
+            isBusy={isStartingProject}
+            isRestoring={isRestoring}
+            errorMessage={startupError}
+          />
+        ) : (
+          content
+        )}
+      </AppShell>
+
+      {currentProjectId && isCreateProjectDialogOpen ? (
+        <CreateProjectDialog
           projectSeed={projectSeed}
           onProjectSeedChange={updateProjectSeedField}
           showOptionalStoryAnchors={showOptionalStoryAnchors}
@@ -534,14 +502,14 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
             setShowOptionalStoryAnchors((current) => !current)
           }
           onCreateProject={handleCreateProject}
-          onOpenProject={handleOpenProject}
+          onCancel={() => {
+            setIsCreateProjectDialogOpen(false);
+            resetProjectCreationState();
+          }}
           isBusy={isStartingProject}
-          isRestoring={isRestoring}
           errorMessage={startupError}
         />
-      ) : (
-        content
-      )}
-    </AppShell>
+      ) : null}
+    </>
   );
 }

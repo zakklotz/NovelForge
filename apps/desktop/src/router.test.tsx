@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleProjectSnapshot } from "@novelforge/test-fixtures";
@@ -29,6 +29,37 @@ const dialogMock = vi.hoisted(() => ({
   open: vi.fn(),
   save: vi.fn(),
 }));
+
+const menuListeners = vi.hoisted(
+  () => new Map<string, (event?: unknown) => void | Promise<void>>(),
+);
+
+const windowApiMock = vi.hoisted(() => {
+  let closeRequestedHandler:
+    | ((event: { preventDefault: () => void }) => void | Promise<void>)
+    | null = null;
+  const destroy = vi.fn();
+  const onCloseRequested = vi.fn(
+    async (callback: (event: { preventDefault: () => void }) => void | Promise<void>) => {
+      closeRequestedHandler = callback;
+      return () => {
+        if (closeRequestedHandler === callback) {
+          closeRequestedHandler = null;
+        }
+      };
+    },
+  );
+
+  return {
+    destroy,
+    onCloseRequested,
+    reset() {
+      closeRequestedHandler = null;
+      destroy.mockReset();
+      onCloseRequested.mockClear();
+    },
+  };
+});
 
 vi.mock("@/lib/tauri", () => ({
   tauriApi: {
@@ -64,6 +95,24 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
   save: dialogMock.save,
 }));
 
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(
+    async (eventName: string, callback: (event?: unknown) => void | Promise<void>) => {
+      menuListeners.set(eventName, callback);
+      return () => {
+        menuListeners.delete(eventName);
+      };
+    },
+  ),
+}));
+
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    onCloseRequested: windowApiMock.onCloseRequested,
+    destroy: windowApiMock.destroy,
+  }),
+}));
+
 class MockWorker {
   addEventListener() {}
   removeEventListener() {}
@@ -94,7 +143,13 @@ describe("AppRouter loaded project flow", () => {
     });
     tauriApiMock.listRecommendedModels.mockResolvedValue([]);
 
+    menuListeners.clear();
+    windowApiMock.reset();
     vi.stubGlobal("Worker", MockWorker);
+    Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
     window.history.pushState({}, "", "/");
     useUiStore.getState().resetUi();
     useUiStore.setState({ currentProjectId: sampleProjectSnapshot.project.id });
@@ -117,6 +172,160 @@ describe("AppRouter loaded project flow", () => {
 
     await waitFor(() => {
       expect(screen.getAllByText("Chapters").length).toBeGreaterThan(0);
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("uses the same seeded brief flow for File > New Project inside an open workspace", async () => {
+    dialogMock.save.mockResolvedValue("/tmp/ember-archive.novelforge");
+    let currentSnapshot = sampleProjectSnapshot;
+    const createdSnapshot = {
+      ...sampleProjectSnapshot,
+      project: {
+        ...sampleProjectSnapshot.project,
+        id: "project-ember-archive",
+        title: "Ember Archive",
+        logline: "A burned-out archivist discovers a war map hidden inside a saint's diary.",
+        premise:
+          "An archivist inherits a diary that rewrites itself whenever an old empire stirs.",
+        centralConflict:
+          "Every clue that could stop the war also exposes the family lie keeping Mara alive.",
+        thematicIntent: "Ask whether truth still matters when survival depends on a myth.",
+        genre: "Mythic political fantasy",
+        tone: "Intimate, haunted, and sharp-edged",
+      },
+      chapters: [],
+      scenes: [],
+      characters: [],
+      suggestions: [],
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        projectId: "project-ember-archive",
+        lastRoute: "/story" as const,
+      },
+    };
+    tauriApiMock.getProjectSnapshot.mockImplementation(async () => currentSnapshot);
+    tauriApiMock.createProject.mockImplementation(async () => {
+      currentSnapshot = createdSnapshot;
+      return createdSnapshot;
+    });
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapters").length).toBeGreaterThan(0);
+    });
+
+    await waitFor(() => {
+      expect(menuListeners.has("novelforge://new-project")).toBe(true);
+    });
+
+    await act(async () => {
+      await menuListeners.get("novelforge://new-project")?.();
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("dialog", { name: "Create a new project" })).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Untitled Novel"), {
+      target: { value: "Ember Archive" },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText("Who wants what, what stands in the way, and why it matters."),
+      {
+        target: {
+          value: "A burned-out archivist discovers a war map hidden inside a saint's diary.",
+        },
+      },
+    );
+    fireEvent.change(screen.getByPlaceholderText("State the core setup the story is built around."), {
+      target: {
+        value: "An archivist inherits a diary that rewrites itself whenever an old empire stirs.",
+      },
+    });
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Name the pressure, opposition, or impossible bind driving the story.",
+      ),
+      {
+        target: {
+          value:
+            "Every clue that could stop the war also exposes the family lie keeping Mara alive.",
+        },
+      },
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Add Optional Anchors" }));
+
+    fireEvent.change(
+      screen.getByPlaceholderText(
+        "Describe the human question or tension the story wants to test.",
+      ),
+      {
+        target: {
+          value: "Ask whether truth still matters when survival depends on a myth.",
+        },
+      },
+    );
+    fireEvent.change(screen.getByPlaceholderText("Science-fantasy adventure"), {
+      target: { value: "Mythic political fantasy" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Tense and wonder-struck"), {
+      target: { value: "Intimate, haunted, and sharp-edged" },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "New Project" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.createProject).toHaveBeenCalledWith({
+        title: "Ember Archive",
+        logline: "A burned-out archivist discovers a war map hidden inside a saint's diary.",
+        premise:
+          "An archivist inherits a diary that rewrites itself whenever an old empire stirs.",
+        centralConflict:
+          "Every clue that could stop the war also exposes the family lie keeping Mara alive.",
+        thematicIntent: "Ask whether truth still matters when survival depends on a myth.",
+        genre: "Mythic political fantasy",
+        tone: "Intimate, haunted, and sharp-edged",
+        path: "/tmp/ember-archive.novelforge",
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/story");
+      expect(screen.getByDisplayValue("Ember Archive")).toBeTruthy();
+      expect(
+        screen.getByDisplayValue(
+          "A burned-out archivist discovers a war map hidden inside a saint's diary.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.getByDisplayValue(
+          "An archivist inherits a diary that rewrites itself whenever an old empire stirs.",
+        ),
+      ).toBeTruthy();
+      expect(
+        screen.queryByRole("dialog", { name: "Create a new project" }),
+      ).toBeNull();
     });
 
     unmount();
@@ -360,7 +569,13 @@ describe("AppRouter startup flow", () => {
     dialogMock.open.mockReset();
     dialogMock.save.mockReset();
 
+    menuListeners.clear();
+    windowApiMock.reset();
     vi.stubGlobal("Worker", MockWorker);
+    Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
+      configurable: true,
+      value: {},
+    });
     window.history.pushState({}, "", "/");
     useUiStore.getState().resetUi();
   });
