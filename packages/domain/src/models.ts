@@ -99,6 +99,7 @@ export const scratchpadActionSchema = z.enum([
 export type ScratchpadAction = z.infer<typeof scratchpadActionSchema>;
 
 export const structuredAiActionSchema = z.enum([
+  "story-diagnose-structure",
   "chapter-propose-scenes",
   "scene-generate-beats",
   "scene-expand-draft",
@@ -174,6 +175,26 @@ export const characterProposalSchema = z.object({
 
 export type CharacterProposal = z.infer<typeof characterProposalSchema>;
 
+export const storyDiagnosticEntrySchema = z.object({
+  title: z.string().min(1),
+  detail: z.string().default(""),
+  focus: domainObjectRefSchema.nullable().default(null),
+  related: z.array(domainObjectRefSchema).default([]),
+});
+
+export type StoryDiagnosticEntry = z.infer<typeof storyDiagnosticEntrySchema>;
+
+export const storyStructureDiagnosticSchema = z.object({
+  underdefinedChapters: z.array(storyDiagnosticEntrySchema).default([]),
+  redundantFunctions: z.array(storyDiagnosticEntrySchema).default([]),
+  missingTransitions: z.array(storyDiagnosticEntrySchema).default([]),
+  nextPlanningTargets: z.array(storyDiagnosticEntrySchema).default([]),
+});
+
+export type StoryStructureDiagnostic = z.infer<
+  typeof storyStructureDiagnosticSchema
+>;
+
 export const scratchpadResultSchema = z.object({
   summary: z.string().default(""),
   chapters: z.array(chapterProposalSchema).default([]),
@@ -232,6 +253,12 @@ export const structuredAiResultSchema = z.object({
   sceneProposals: z.array(sceneProposalSchema).default([]),
   beatOutline: z.string().default(""),
   manuscriptText: z.string().default(""),
+  storyStructureDiagnostic: storyStructureDiagnosticSchema.default({
+    underdefinedChapters: [],
+    redundantFunctions: [],
+    missingTransitions: [],
+    nextPlanningTargets: [],
+  }),
 });
 
 export type StructuredAiResult = z.infer<typeof structuredAiResultSchema>;

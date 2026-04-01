@@ -337,6 +337,24 @@ pub struct ScratchpadChatResponse {
     pub result: ScratchpadResult,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryDiagnosticEntry {
+    pub title: String,
+    pub detail: String,
+    pub focus: Option<DomainObjectRef>,
+    pub related: Vec<DomainObjectRef>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryStructureDiagnostic {
+    pub underdefined_chapters: Vec<StoryDiagnosticEntry>,
+    pub redundant_functions: Vec<StoryDiagnosticEntry>,
+    pub missing_transitions: Vec<StoryDiagnosticEntry>,
+    pub next_planning_targets: Vec<StoryDiagnosticEntry>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StructuredAIResult {
@@ -344,6 +362,7 @@ pub struct StructuredAIResult {
     pub scene_proposals: Vec<SceneProposal>,
     pub beat_outline: String,
     pub manuscript_text: String,
+    pub story_structure_diagnostic: StoryStructureDiagnostic,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

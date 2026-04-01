@@ -1,8 +1,24 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
-import type { Chapter, ProjectSnapshot, Scene } from "@novelforge/domain";
-import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
+import type {
+  Chapter,
+  DomainObjectRef,
+  ProjectSnapshot,
+  Scene,
+  StoryStructureDiagnostic,
+  StructuredAiResponse,
+} from "@novelforge/domain";
+import {
+  ArrowDown,
+  ArrowUp,
+  ChevronRight,
+  Plus,
+  RefreshCw,
+  WandSparkles,
+} from "lucide-react";
 import { Badge, Button, EmptyState, Panel, SectionHeading } from "@/components/ui";
+import { useAiRuntime } from "@/hooks/useAiRuntime";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { createId } from "@/lib/ids";
@@ -196,16 +212,86 @@ function buildReorderedChapterIds(
   return reordered;
 }
 
+const storyDiagnosticSections: Array<{
+  key: keyof StoryStructureDiagnostic;
+  title: string;
+  description: string;
+  emptyMessage: string;
+  tone: DiagnosticTone;
+}> = [
+  {
+    key: "underdefinedChapters",
+    title: "Underdefined Chapters",
+    description: "Chapters whose current intent or scene support may still be too thin.",
+    emptyMessage: "No obvious underdefined chapters surfaced in this review pass.",
+    tone: "warning",
+  },
+  {
+    key: "redundantFunctions",
+    title: "Redundant Functions",
+    description: "Places where chapters or scenes may be repeating the same job.",
+    emptyMessage: "No strong redundancy concerns surfaced in this review pass.",
+    tone: "default",
+  },
+  {
+    key: "missingTransitions",
+    title: "Missing Transitions",
+    description: "Handoffs, bridge points, or consequence beats that may be missing.",
+    emptyMessage: "No immediate transition gaps surfaced in this review pass.",
+    tone: "accent",
+  },
+  {
+    key: "nextPlanningTargets",
+    title: "Next Planning Targets",
+    description: "Highest-leverage planning passes to tackle next.",
+    emptyMessage: "No extra planning targets were suggested beyond the current spine.",
+    tone: "accent",
+  },
+];
+
+function buildStoryReferenceLabel(
+  reference: DomainObjectRef,
+  chapterById: Map<string, Chapter>,
+  sceneById: Map<string, Scene>,
+) {
+  if (reference.kind === "chapter") {
+    const chapter = chapterById.get(reference.id);
+    if (chapter) {
+      return `Chapter ${chapter.orderIndex + 1}: ${chapter.title}`;
+    }
+  }
+
+  if (reference.kind === "scene") {
+    const scene = sceneById.get(reference.id);
+    if (scene) {
+      const sceneLabel = `Scene ${scene.orderIndex + 1}: ${scene.title}`;
+      const chapter = scene.chapterId ? chapterById.get(scene.chapterId) : null;
+      return chapter
+        ? `Chapter ${chapter.orderIndex + 1} · ${sceneLabel}`
+        : `Unassigned · ${sceneLabel}`;
+    }
+  }
+
+  return reference.title?.trim() || reference.id;
+}
+
 export function StoryOverviewView() {
   const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
+  const appSettingsQuery = useAppSettings();
+  const { runStructuredAiAction } = useAiRuntime();
   const { reorderChapters, saveChapter } = useProjectRuntime();
   const searchText = useUiStore((state) => state.searchText);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
+  const appSettings = appSettingsQuery.data;
   const [isAddingChapter, setIsAddingChapter] = useState(false);
   const [movingChapterId, setMovingChapterId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [storyDiagnosticResponse, setStoryDiagnosticResponse] =
+    useState<StructuredAiResponse | null>(null);
+  const [isAnalyzingStory, setIsAnalyzingStory] = useState(false);
+  const [storyDiagnosticError, setStoryDiagnosticError] = useState<string | null>(null);
 
   if (!snapshot) {
     return null;
@@ -214,6 +300,8 @@ export function StoryOverviewView() {
   const currentSnapshot = snapshot;
   const orderedChapters = buildOrderedChapters(currentSnapshot);
   const chapterScenes = buildChapterSceneMap(currentSnapshot);
+  const chapterById = new Map(currentSnapshot.chapters.map((chapter) => [chapter.id, chapter]));
+  const sceneById = new Map(currentSnapshot.scenes.map((scene) => [scene.id, scene]));
   const typicalMappedChapterSceneCount = getTypicalMappedChapterSceneCount(
     orderedChapters,
     chapterScenes,
@@ -221,6 +309,14 @@ export function StoryOverviewView() {
   const chapterOrderIndex = new Map(
     orderedChapters.map((chapter, index) => [chapter.id, index]),
   );
+  const defaultProviderId = appSettings?.ai.defaultProvider;
+  const defaultModelId = defaultProviderId
+    ? appSettings.ai.providers[defaultProviderId].defaultModel
+    : "";
+  const hasConfiguredAi = defaultProviderId
+    ? appSettings?.ai.providers[defaultProviderId].hasApiKey &&
+      defaultModelId.trim().length > 0
+    : false;
   const normalizedSearchText = searchText.trim().toLowerCase();
   const filteredChapters = orderedChapters.filter((chapter) => {
     if (!normalizedSearchText) {
@@ -242,10 +338,18 @@ export function StoryOverviewView() {
     );
     return chapterDiagnosticSummary.badges.length > 0;
   }).length;
+  const storyDiagnosticEntryCount = storyDiagnosticSections.reduce(
+    (count, section) =>
+      count +
+      (storyDiagnosticResponse?.result.storyStructureDiagnostic[section.key].length ?? 0),
+    0,
+  );
   const isMutatingStructure = isAddingChapter || movingChapterId !== null;
 
   async function handleAddChapter() {
     setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
     setIsAddingChapter(true);
 
     try {
@@ -287,6 +391,8 @@ export function StoryOverviewView() {
     }
 
     setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
     setMovingChapterId(chapterId);
 
     try {
@@ -302,6 +408,36 @@ export function StoryOverviewView() {
     }
   }
 
+  async function handleAnalyzeStoryStructure() {
+    if (!defaultProviderId || !defaultModelId.trim()) {
+      return;
+    }
+
+    setIsAnalyzingStory(true);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+
+    try {
+      const response = await runStructuredAiAction({
+        projectId: currentSnapshot.project.id,
+        providerId: defaultProviderId,
+        modelId: defaultModelId.trim(),
+        action: "story-diagnose-structure",
+        workspaceContext: "",
+      });
+
+      setStoryDiagnosticResponse(response);
+    } catch (error) {
+      setStoryDiagnosticError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not analyze the full story structure.",
+      );
+    } finally {
+      setIsAnalyzingStory(false);
+    }
+  }
+
   return (
     <Panel className="h-full min-h-0">
       <SectionHeading
@@ -309,6 +445,18 @@ export function StoryOverviewView() {
         description="Scan the full story in chapter order, spot obvious structural gaps, and jump straight into chapter or scene workspaces when something needs attention."
         actions={
           <div className="flex flex-wrap gap-3">
+            <Button
+              variant="secondary"
+              onClick={() => void handleAnalyzeStoryStructure()}
+              disabled={!hasConfiguredAi || isMutatingStructure || isAnalyzingStory}
+            >
+              {isAnalyzingStory ? (
+                <RefreshCw className="size-4 animate-spin" />
+              ) : (
+                <WandSparkles className="size-4" />
+              )}
+              Analyze Story Structure
+            </Button>
             <Button onClick={() => void handleAddChapter()} disabled={isMutatingStructure}>
               <Plus className="size-4" />
               {isAddingChapter ? "Adding..." : "Add Chapter"}
@@ -379,9 +527,146 @@ export function StoryOverviewView() {
         </Panel>
       ) : null}
 
+      {!hasConfiguredAi ? (
+        <Panel className="mt-6 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+          <p className="text-sm text-[var(--warning)]">
+            Add a default AI provider and API key in Settings to analyze the full
+            story structure from the spine.
+          </p>
+        </Panel>
+      ) : null}
+
+      {storyDiagnosticError ? (
+        <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+          <p className="text-sm text-[var(--danger)]">{storyDiagnosticError}</p>
+        </Panel>
+      ) : null}
+
       {actionError ? (
         <Panel className="mt-6 bg-[color:rgba(174,67,45,0.08)] shadow-none">
           <p className="text-sm text-[var(--danger)]">{actionError}</p>
+        </Panel>
+      ) : null}
+
+      {storyDiagnosticResponse ? (
+        <Panel className="mt-6 bg-white/80 shadow-none">
+          <SectionHeading
+            title="Story Structure Review"
+            description={
+              storyDiagnosticResponse.result.summary ||
+              storyDiagnosticResponse.assistantMessage ||
+              "Review the diagnostics below before making manual story structure changes."
+            }
+            actions={
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  setStoryDiagnosticResponse(null);
+                  setStoryDiagnosticError(null);
+                }}
+              >
+                Clear Review
+              </Button>
+            }
+          />
+
+          {storyDiagnosticResponse.assistantMessage &&
+          storyDiagnosticResponse.assistantMessage !==
+            storyDiagnosticResponse.result.summary ? (
+            <p className="mt-4 text-sm text-[var(--ink-muted)]">
+              {storyDiagnosticResponse.assistantMessage}
+            </p>
+          ) : null}
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Badge tone="accent">
+              {storyDiagnosticEntryCount} structural note
+              {storyDiagnosticEntryCount === 1 ? "" : "s"}
+            </Badge>
+          </div>
+
+          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+            {storyDiagnosticSections.map((section) => {
+              const entries =
+                storyDiagnosticResponse.result.storyStructureDiagnostic[section.key];
+
+              return (
+                <div
+                  key={section.key}
+                  className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4"
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h3 className="text-base font-semibold text-[var(--ink)]">
+                        {section.title}
+                      </h3>
+                      <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                        {section.description}
+                      </p>
+                    </div>
+                    <Badge tone={section.tone}>{entries.length}</Badge>
+                  </div>
+
+                  {entries.length > 0 ? (
+                    <div className="mt-4 grid gap-3">
+                      {entries.map((entry, index) => {
+                        const relatedReferences = entry.related.filter(
+                          (reference) =>
+                            !entry.focus ||
+                            reference.kind !== entry.focus.kind ||
+                            reference.id !== entry.focus.id,
+                        );
+
+                        return (
+                          <div
+                            key={`${section.key}-${entry.title}-${index}`}
+                            className="rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                          >
+                            <p className="text-sm font-semibold text-[var(--ink)]">
+                              {entry.title}
+                            </p>
+                            <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
+                              {entry.detail ||
+                                "Review this area in the existing chapter and scene workspaces."}
+                            </p>
+
+                            {entry.focus || relatedReferences.length > 0 ? (
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                {entry.focus ? (
+                                  <Badge tone={section.tone}>
+                                    {buildStoryReferenceLabel(
+                                      entry.focus,
+                                      chapterById,
+                                      sceneById,
+                                    )}
+                                  </Badge>
+                                ) : null}
+                                {relatedReferences.map((reference) => (
+                                  <Badge
+                                    key={`${section.key}-${entry.title}-${reference.kind}-${reference.id}`}
+                                  >
+                                    {buildStoryReferenceLabel(
+                                      reference,
+                                      chapterById,
+                                      sceneById,
+                                    )}
+                                  </Badge>
+                                ))}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">
+                      {section.emptyMessage}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </Panel>
       ) : null}
 

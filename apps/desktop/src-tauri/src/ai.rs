@@ -11,7 +11,8 @@ use crate::models::{
     Chapter, ChapterProposal, Character, CharacterProposal, ProjectSnapshot, RecommendedModel,
     ProviderConnectionResult, Relationship, RunScratchpadChatInput, RunStructuredAIActionInput,
     Scene, SceneProposal, ScratchpadChatResponse, ScratchpadMessage, ScratchpadProjectContext,
-    ScratchpadResult, StructuredAIResponse, StructuredAIResult, TestProviderConnectionInput,
+    ScratchpadResult, StoryDiagnosticEntry, StoryStructureDiagnostic, StructuredAIResponse,
+    StructuredAIResult, TestProviderConnectionInput,
 };
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -185,6 +186,43 @@ struct RawScratchpadEnvelope {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
+struct RawDomainObjectRef {
+    #[serde(default)]
+    kind: String,
+    #[serde(default)]
+    id: String,
+    #[serde(default)]
+    title: Option<String>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawStoryDiagnosticEntry {
+    #[serde(default)]
+    title: String,
+    #[serde(default)]
+    detail: String,
+    #[serde(default)]
+    focus: Option<RawDomainObjectRef>,
+    #[serde(default)]
+    related: Vec<RawDomainObjectRef>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RawStoryStructureDiagnostic {
+    #[serde(default)]
+    underdefined_chapters: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
+    redundant_functions: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
+    missing_transitions: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
+    next_planning_targets: Vec<RawStoryDiagnosticEntry>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct RawStructuredActionResult {
     #[serde(default)]
     summary: String,
@@ -194,6 +232,8 @@ struct RawStructuredActionResult {
     beat_outline: String,
     #[serde(default)]
     manuscript_text: String,
+    #[serde(default)]
+    story_structure_diagnostic: RawStoryStructureDiagnostic,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -514,6 +554,101 @@ fn build_scene_structured_context(snapshot: &ProjectSnapshot, scene_id: &str) ->
     .context("Failed to serialize scene planning context.")
 }
 
+fn build_story_scene_context(scene: &Scene) -> Value {
+    json!({
+        "id": scene.id,
+        "chapterId": scene.chapter_id,
+        "orderIndex": scene.order_index,
+        "title": scene.title,
+        "summary": scene.summary,
+        "purpose": scene.purpose,
+        "beatOutline": truncate_text(&scene.beat_outline, 500),
+        "conflict": scene.conflict,
+        "outcome": scene.outcome,
+        "povCharacterId": scene.pov_character_id,
+        "location": scene.location,
+        "timeLabel": scene.time_label,
+        "involvedCharacterIds": scene.involved_character_ids,
+        "continuityTags": scene.continuity_tags,
+        "dependencySceneIds": scene.dependency_scene_ids,
+    })
+}
+
+fn build_story_structured_context(snapshot: &ProjectSnapshot) -> Result<String> {
+    let mut ordered_chapters = snapshot.chapters.clone();
+    ordered_chapters.sort_by_key(|chapter| chapter.order_index);
+
+    let story_spine = ordered_chapters
+        .iter()
+        .map(|chapter| {
+            let mut chapter_scenes = snapshot
+                .scenes
+                .iter()
+                .filter(|scene| scene.chapter_id.as_deref() == Some(chapter.id.as_str()))
+                .cloned()
+                .collect::<Vec<_>>();
+            chapter_scenes.sort_by_key(|scene| scene.order_index);
+
+            let focused_characters = snapshot
+                .characters
+                .iter()
+                .filter(|character| chapter.character_focus_ids.contains(&character.id))
+                .map(|character| {
+                    json!({
+                        "id": character.id,
+                        "name": character.name,
+                        "role": character.role,
+                        "arcDirection": character.arc_direction,
+                    })
+                })
+                .collect::<Vec<_>>();
+
+            json!({
+                "chapter": chapter,
+                "sceneSequence": chapter_scenes
+                    .iter()
+                    .map(build_story_scene_context)
+                    .collect::<Vec<_>>(),
+                "focusedCharacters": focused_characters,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    let mut unassigned_scenes = snapshot
+        .scenes
+        .iter()
+        .filter(|scene| scene.chapter_id.is_none())
+        .cloned()
+        .collect::<Vec<_>>();
+    unassigned_scenes.sort_by_key(|scene| scene.order_index);
+
+    serde_json::to_string_pretty(&json!({
+        "project": {
+            "id": snapshot.project.id,
+            "title": snapshot.project.title,
+            "logline": snapshot.project.logline,
+        },
+        "storySpine": story_spine,
+        "unassignedScenes": unassigned_scenes
+            .iter()
+            .map(build_story_scene_context)
+            .collect::<Vec<_>>(),
+        "characters": snapshot
+            .characters
+            .iter()
+            .map(|character| {
+                json!({
+                    "id": character.id,
+                    "name": character.name,
+                    "role": character.role,
+                    "arcDirection": character.arc_direction,
+                })
+            })
+            .collect::<Vec<_>>(),
+    }))
+    .context("Failed to serialize story structure context.")
+}
+
 fn action_brief(action: &str) -> &'static str {
     match action {
         "create-chapters" => {
@@ -620,6 +755,9 @@ New user input:\n{user_input}",
 
 fn structured_action_brief(action: &str) -> &'static str {
     match action {
+        "story-diagnose-structure" => {
+            "Review the whole story spine for structural gaps, redundancy, and next planning targets."
+        }
         "chapter-propose-scenes" => {
             "Propose scene records that help the current chapter fulfill its planning role."
         }
@@ -660,7 +798,33 @@ Return JSON only with this exact top-level shape:\n\
       \"manuscriptText\": \"<p></p>\"\n\
     }}],\n\
     \"beatOutline\": \"\",\n\
-    \"manuscriptText\": \"\"\n\
+    \"manuscriptText\": \"\",\n\
+    \"storyStructureDiagnostic\": {{\n\
+      \"underdefinedChapters\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
+      \"redundantFunctions\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"scene\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
+      \"missingTransitions\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"scene\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
+      \"nextPlanningTargets\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}]\n\
+    }}\n\
   }}\n\
 }}\n\
 Rules:\n\
@@ -668,6 +832,8 @@ Rules:\n\
 - Leave unused arrays empty and unused strings blank.\n\
 - Ground every output in the supplied NovelForge context.\n\
 - Do not contradict existing chapter, scene, or character facts.\n\
+- For storyStructureDiagnostic entries, use chapter or scene refs whenever the issue points to a specific part of the spine.\n\
+- Keep storyStructureDiagnostic entries short, concrete, and review-oriented.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -690,6 +856,21 @@ fn build_structured_user_prompt(
     };
 
     match input.action.as_str() {
+        "story-diagnose-structure" => Ok(format!(
+            "Action: diagnose the whole story structure.\n\
+Context:\n{context}\n\n\
+Task:\n\
+- Review the current story spine at the chapter and scene planning level, not as prose critique.\n\
+- Use result.storyStructureDiagnostic.underdefinedChapters for chapters that look thin, underdefined, or weakly supported by their current scenes.\n\
+- Use result.storyStructureDiagnostic.redundantFunctions for chapters or scenes that appear to serve the same function without enough escalation or differentiation.\n\
+- Use result.storyStructureDiagnostic.missingTransitions for missing handoffs, consequence beats, bridge scenes, or chapter-to-chapter transitions.\n\
+- Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
+- Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
+- Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
+- Limit each diagnostic section to the most useful 0 to 4 entries.\n\
+- Leave result.sceneProposals empty and result.beatOutline/result.manuscriptText blank for this action.{workspace_context}",
+            context = build_story_structured_context(snapshot)?,
+        )),
         "chapter-propose-scenes" => {
             let chapter_id = input
                 .chapter_id
@@ -846,12 +1027,78 @@ fn map_result(raw: RawScratchpadResult) -> ScratchpadResult {
     }
 }
 
+fn map_story_reference(reference: RawDomainObjectRef) -> Option<crate::models::DomainObjectRef> {
+    let kind = reference.kind.trim().to_string();
+    let id = reference.id.trim().to_string();
+
+    if kind.is_empty() || id.is_empty() {
+        return None;
+    }
+
+    Some(crate::models::DomainObjectRef {
+        kind,
+        id,
+        title: reference.title.and_then(|title| {
+            let trimmed = title.trim().to_string();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed)
+            }
+        }),
+    })
+}
+
+fn map_story_diagnostic_entry(raw: RawStoryDiagnosticEntry) -> Option<StoryDiagnosticEntry> {
+    let title = raw.title.trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+
+    Some(StoryDiagnosticEntry {
+        title,
+        detail: raw.detail.trim().to_string(),
+        focus: raw.focus.and_then(map_story_reference),
+        related: raw
+            .related
+            .into_iter()
+            .filter_map(map_story_reference)
+            .collect(),
+    })
+}
+
+fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStructureDiagnostic {
+    StoryStructureDiagnostic {
+        underdefined_chapters: raw
+            .underdefined_chapters
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        redundant_functions: raw
+            .redundant_functions
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        missing_transitions: raw
+            .missing_transitions
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        next_planning_targets: raw
+            .next_planning_targets
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+    }
+}
+
 fn empty_structured_result() -> StructuredAIResult {
     StructuredAIResult {
         summary: String::new(),
         scene_proposals: vec![],
         beat_outline: String::new(),
         manuscript_text: String::new(),
+        story_structure_diagnostic: StoryStructureDiagnostic::default(),
     }
 }
 
@@ -901,6 +1148,9 @@ fn parse_structured_action_response(
                 } else {
                     ensure_manuscript_html(&parsed.result.manuscript_text)
                 },
+                story_structure_diagnostic: map_story_structure_diagnostic(
+                    parsed.result.story_structure_diagnostic,
+                ),
             };
             let assistant_message = if parsed.assistant_message.trim().is_empty() {
                 if result.summary.trim().is_empty() {
@@ -921,12 +1171,14 @@ fn parse_structured_action_response(
                     scene_proposals: vec![],
                     beat_outline: trimmed.clone(),
                     manuscript_text: String::new(),
+                    story_structure_diagnostic: StoryStructureDiagnostic::default(),
                 },
                 "scene-expand-draft" => StructuredAIResult {
                     summary: String::new(),
                     scene_proposals: vec![],
                     beat_outline: String::new(),
                     manuscript_text: ensure_manuscript_html(&trimmed),
+                    story_structure_diagnostic: StoryStructureDiagnostic::default(),
                 },
                 _ => empty_structured_result(),
             };
@@ -1281,6 +1533,63 @@ mod tests {
     }
 
     #[test]
+    fn structured_parser_maps_story_structure_diagnostics() {
+        let raw = r#"
+{
+  "assistantMessage": "Reviewed the whole spine.",
+  "result": {
+    "summary": "Chapter 2 needs a clearer handoff.",
+    "sceneProposals": [],
+    "beatOutline": "",
+    "manuscriptText": "",
+    "storyStructureDiagnostic": {
+      "underdefinedChapters": [
+        {
+          "title": "Chapter 2 lacks a sharper job",
+          "detail": "The chapter pressure is present, but the chapter-level outcome is still vague.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
+        }
+      ],
+      "redundantFunctions": [],
+      "missingTransitions": [
+        {
+          "title": "Bridge the reveal into the border check",
+          "detail": "A consequence beat may help the emotional carryover.",
+          "focus": { "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" },
+          "related": [{ "kind": "scene", "id": "scene-2", "title": "The Crate Speaks" }]
+        }
+      ],
+      "nextPlanningTargets": [
+        {
+          "title": "Define the chapter-level irreversible turn",
+          "detail": "Clarify what Chapter 2 changes beyond surviving the checkpoint.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": []
+        }
+      ]
+    }
+  }
+}
+"#;
+
+        let (assistant_message, result) =
+            parse_structured_action_response("story-diagnose-structure", raw);
+
+        assert_eq!(assistant_message, "Reviewed the whole spine.");
+        assert_eq!(result.story_structure_diagnostic.underdefined_chapters.len(), 1);
+        assert_eq!(
+            result.story_structure_diagnostic.underdefined_chapters[0]
+                .focus
+                .as_ref()
+                .map(|reference| reference.id.as_str()),
+            Some("chapter-2")
+        );
+        assert_eq!(result.story_structure_diagnostic.missing_transitions.len(), 1);
+        assert_eq!(result.story_structure_diagnostic.next_planning_targets.len(), 1);
+    }
+
+    #[test]
     fn structured_parser_falls_back_to_plain_text_for_beats() {
         let (assistant_message, result) =
             parse_structured_action_response("scene-generate-beats", "Beat one\nBeat two");
@@ -1288,5 +1597,9 @@ mod tests {
         assert_eq!(assistant_message, "Beat one\nBeat two");
         assert_eq!(result.beat_outline, "Beat one\nBeat two");
         assert!(result.scene_proposals.is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .underdefined_chapters
+            .is_empty());
     }
 }

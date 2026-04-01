@@ -9,6 +9,7 @@ import {
   runImpactAnalysisInputSchema,
   scratchpadChatResponseSchema,
   scratchpadSessionSchema,
+  structuredAiResponseSchema,
   suggestionSchema,
 } from "../src";
 import {
@@ -70,6 +71,50 @@ describe("domain schemas", () => {
     );
     expect(scratchpadChatResponseSchema.parse(sampleScratchpadChatResponse)).toEqual(
       sampleScratchpadChatResponse,
+    );
+  });
+
+  it("parses structured story diagnostics with chapter and scene refs", () => {
+    expect(
+      structuredAiResponseSchema.parse({
+        providerId: "gemini",
+        modelId: "gemini-2.5-flash",
+        action: "story-diagnose-structure",
+        assistantMessage: "Reviewed the full story spine.",
+        result: {
+          summary: "Chapter 2 needs a clearer handoff.",
+          sceneProposals: [],
+          beatOutline: "",
+          manuscriptText: "",
+          storyStructureDiagnostic: {
+            underdefinedChapters: [
+              {
+                title: "Chapter 2 needs a clearer chapter turn",
+                detail: "The chapter pressure is visible, but its end-state is still vague.",
+                focus: {
+                  kind: "chapter",
+                  id: "chapter-2",
+                  title: "Chapter 2: Border Sparks",
+                },
+                related: [
+                  {
+                    kind: "scene",
+                    id: "scene-3",
+                    title: "Checkpoint Lanterns",
+                  },
+                ],
+              },
+            ],
+            redundantFunctions: [],
+            missingTransitions: [],
+            nextPlanningTargets: [],
+          },
+        },
+      }),
+    ).toEqual(
+      expect.objectContaining({
+        action: "story-diagnose-structure",
+      }),
     );
   });
 
