@@ -34,6 +34,47 @@ const menuListeners = vi.hoisted(
   () => new Map<string, (event?: unknown) => void | Promise<void>>(),
 );
 
+const windowApiMock = vi.hoisted(() => {
+  let closeRequestedHandler:
+    | ((event: { preventDefault: () => void }) => void | Promise<void>)
+    | null = null;
+  const destroy = vi.fn();
+  const onCloseRequested = vi.fn(
+    async (callback: (event: { preventDefault: () => void }) => void | Promise<void>) => {
+      closeRequestedHandler = callback;
+      return () => {
+        if (closeRequestedHandler === callback) {
+          closeRequestedHandler = null;
+        }
+      };
+    },
+  );
+
+  return {
+    destroy,
+    onCloseRequested,
+    reset() {
+      closeRequestedHandler = null;
+      destroy.mockReset();
+      onCloseRequested.mockClear();
+    },
+    async triggerCloseRequested() {
+      if (!closeRequestedHandler) {
+        throw new Error("Native close listener was not registered.");
+      }
+
+      let prevented = false;
+      await closeRequestedHandler({
+        preventDefault: () => {
+          prevented = true;
+        },
+      });
+
+      return { prevented };
+    },
+  };
+});
+
 const tiptapMock = vi.hoisted(() => {
   let html = "<p></p>";
   let hasMounted = false;
@@ -116,6 +157,13 @@ vi.mock("@tauri-apps/api/event", () => ({
   ),
 }));
 
+vi.mock("@tauri-apps/api/window", () => ({
+  getCurrentWindow: () => ({
+    onCloseRequested: windowApiMock.onCloseRequested,
+    destroy: windowApiMock.destroy,
+  }),
+}));
+
 vi.mock("@tauri-apps/plugin-dialog", () => ({
   open: vi.fn(),
   save: vi.fn(),
@@ -149,6 +197,7 @@ describe("Scene workspace unsaved change protection", () => {
     currentSnapshot = structuredClone(sampleProjectSnapshot);
     tiptapMock.reset(sampleProjectSnapshot.scenes[0].manuscriptText);
     menuListeners.clear();
+    windowApiMock.reset();
     vi.useRealTimers();
     vi.stubGlobal("Worker", MockWorker);
     Object.defineProperty(window, "__TAURI_EVENT_PLUGIN_INTERNALS__", {
@@ -237,6 +286,17 @@ describe("Scene workspace unsaved change protection", () => {
       ...rendered,
       queryClient,
     };
+  }
+
+  async function requestNativeClose() {
+    let result: { prevented: boolean } | null = null;
+    await act(async () => {
+      result = await windowApiMock.triggerCloseRequested();
+    });
+    if (!result) {
+      throw new Error("Native close request did not produce a result.");
+    }
+    return result;
   }
 
   it("keeps unsaved planning edits in place when draft autosave refreshes the snapshot", async () => {
@@ -343,6 +403,109 @@ describe("Scene workspace unsaved change protection", () => {
     });
 
     await screen.findByText("No project open");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("blocks native window close until the user cancels or resolves the prompt", async () => {
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+
+    fireEvent.change(screen.getByLabelText(/summary/i), {
+      target: { value: "Keep the app open for now." },
+    });
+
+    await expect(requestNativeClose()).resolves.toEqual({ prevented: true });
+    await screen.findByText("Unsaved scene changes");
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Unsaved scene changes")).toBeNull();
+    });
+    expect(windowApiMock.destroy).not.toHaveBeenCalled();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("waits for save completion before allowing native window close", async () => {
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+
+    fireEvent.change(screen.getByLabelText(/summary/i), {
+      target: { value: "Save before closing the app." },
+    });
+
+    let resolveSaveScene: (() => void) | undefined;
+    tauriApiMock.saveScene.mockImplementationOnce(
+      async (input: { id: string; [key: string]: unknown }) => {
+        await new Promise<void>((resolve) => {
+          resolveSaveScene = resolve;
+        });
+
+        const updatedScene = {
+          ...currentSnapshot.scenes.find((scene) => scene.id === input.id)!,
+          ...input,
+        };
+        currentSnapshot = {
+          ...currentSnapshot,
+          scenes: currentSnapshot.scenes.map((scene) =>
+            scene.id === input.id ? updatedScene : scene,
+          ),
+        };
+        return updatedScene;
+      },
+    );
+
+    await expect(requestNativeClose()).resolves.toEqual({ prevented: true });
+    await screen.findByText("Unsaved scene changes");
+
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.saveScene).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "scene-1",
+          summary: "Save before closing the app.",
+        }),
+      );
+    });
+    expect(windowApiMock.destroy).not.toHaveBeenCalled();
+
+    if (!resolveSaveScene) {
+      throw new Error("Scene save did not start.");
+    }
+    resolveSaveScene();
+
+    await waitFor(() => {
+      expect(windowApiMock.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("allows native window close after discarding local scene edits", async () => {
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+
+    fireEvent.change(screen.getByLabelText(/summary/i), {
+      target: { value: "Discard this before app close." },
+    });
+
+    await expect(requestNativeClose()).resolves.toEqual({ prevented: true });
+    await screen.findByText("Unsaved scene changes");
+
+    fireEvent.click(screen.getByRole("button", { name: /discard changes/i }));
+
+    await waitFor(() => {
+      expect(windowApiMock.destroy).toHaveBeenCalledTimes(1);
+    });
 
     unmount();
     queryClient.clear();

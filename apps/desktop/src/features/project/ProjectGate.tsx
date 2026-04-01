@@ -1,5 +1,6 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CreateProjectInput } from "@novelforge/domain";
@@ -15,6 +16,7 @@ const MENU_EVENT_NEW_PROJECT = "novelforge://new-project";
 const MENU_EVENT_OPEN_PROJECT = "novelforge://open-project";
 const MENU_EVENT_CLOSE_PROJECT = "novelforge://close-project";
 const MENU_EVENT_OPEN_SETTINGS = "novelforge://open-settings";
+const CLOSE_APP_TARGET_LABEL = "close NovelForge";
 
 function StartupState({
   projectTitle,
@@ -204,6 +206,23 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     await navigate({ to: "/settings" });
   });
 
+  const handleNativeCloseRequested = useEffectEvent(async () => {
+    const session = useUiStore.getState().sceneWorkspaceSession;
+
+    if (!session || session.dirtyAreas.length === 0) {
+      return false;
+    }
+
+    setPendingSceneWorkspaceAction({
+      targetLabel: CLOSE_APP_TARGET_LABEL,
+      runAction: async () => {
+        await getCurrentWindow().destroy();
+      },
+    });
+
+    return true;
+  });
+
   useEffect(() => {
     if (hasAttemptedRestore.current || currentProjectId) {
       setIsRestoring(false);
@@ -271,6 +290,36 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     handleOpenProject,
     handleOpenSettings,
   ]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI_EVENT_PLUGIN_INTERNALS__" in window)) {
+      return;
+    }
+
+    const currentWindow = getCurrentWindow();
+    let unlistenCloseRequested: (() => void) | null = null;
+    let disposed = false;
+
+    void currentWindow
+      .onCloseRequested(async (event) => {
+        const shouldBlockClose = await handleNativeCloseRequested();
+        if (shouldBlockClose) {
+          event.preventDefault();
+        }
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+          return;
+        }
+        unlistenCloseRequested = unlisten;
+      });
+
+    return () => {
+      disposed = true;
+      unlistenCloseRequested?.();
+    };
+  }, [handleNativeCloseRequested]);
 
   useEffect(() => {
     if (!snapshotQuery.data || pathname !== "/") {
