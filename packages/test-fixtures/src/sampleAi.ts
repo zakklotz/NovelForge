@@ -74,6 +74,8 @@ export const sampleScratchpadResult: ScratchpadResult = {
       title: "Reefline Salvage",
       summary: "Mara hears the signal inside a wrecked beacon.",
       purpose: "Inciting disturbance",
+      beatOutline:
+        "Mara finds the beacon core.\nThe crew pushes to sell it.\nMara pockets it before anyone else can stop her.",
       conflict: "The crew wants profit; Mara wants answers.",
       outcome: "Mara hides the beacon core before the others can sell it.",
       povCharacterId: null,

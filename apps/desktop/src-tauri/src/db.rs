@@ -20,7 +20,10 @@ use crate::models::{
     SuggestionEvidenceRef, SyncSuggestionsInput, ViewFilters,
 };
 
-const MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/0001_initial.sql"))];
+const MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/0001_initial.sql")),
+    (2, include_str!("../migrations/0002_scene_beat_outline.sql")),
+];
 
 fn now_iso() -> String {
     Utc::now().to_rfc3339()
@@ -92,6 +95,11 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
         transaction.pragma_update(None, "user_version", version)?;
         transaction.commit()?;
     }
+
+    connection.execute(
+        "UPDATE project SET schema_version = ?1 WHERE schema_version < ?1",
+        params![latest_version],
+    )?;
 
     Ok(())
 }
@@ -285,7 +293,7 @@ fn load_chapters(connection: &Connection) -> Result<Vec<Chapter>> {
 
 fn load_scenes(connection: &Connection) -> Result<Vec<Scene>> {
     let mut statement = connection.prepare(
-        "SELECT id, project_id, chapter_id, order_index, title, summary, purpose, conflict, outcome, pov_character_id, location, time_label, manuscript_text, created_at, updated_at FROM scenes ORDER BY COALESCE(chapter_id, id) ASC, order_index ASC, created_at ASC",
+        "SELECT id, project_id, chapter_id, order_index, title, summary, purpose, beat_outline, conflict, outcome, pov_character_id, location, time_label, manuscript_text, created_at, updated_at FROM scenes ORDER BY COALESCE(chapter_id, id) ASC, order_index ASC, created_at ASC",
     )?;
 
     let rows = statement.query_map([], |row| {
@@ -299,11 +307,12 @@ fn load_scenes(connection: &Connection) -> Result<Vec<Scene>> {
             title: row.get(4)?,
             summary: row.get(5)?,
             purpose: row.get(6)?,
-            conflict: row.get(7)?,
-            outcome: row.get(8)?,
-            pov_character_id: row.get(9)?,
-            location: row.get(10)?,
-            time_label: row.get(11)?,
+            beat_outline: row.get(7)?,
+            conflict: row.get(8)?,
+            outcome: row.get(9)?,
+            pov_character_id: row.get(10)?,
+            location: row.get(11)?,
+            time_label: row.get(12)?,
             involved_character_ids: load_string_list(
                 connection,
                 "SELECT character_id FROM scene_characters WHERE scene_id = ?1 ORDER BY position ASC",
@@ -322,9 +331,9 @@ fn load_scenes(connection: &Connection) -> Result<Vec<Scene>> {
                 &id,
             )
             .map_err(boxed_row_error)?,
-            manuscript_text: row.get(12)?,
-            created_at: row.get(13)?,
-            updated_at: row.get(14)?,
+            manuscript_text: row.get(13)?,
+            created_at: row.get(14)?,
+            updated_at: row.get(15)?,
         })
     })?;
 
@@ -1010,6 +1019,7 @@ pub fn apply_scratchpad_result(
             title: proposal.title.trim().to_string(),
             summary: proposal.summary.clone(),
             purpose: proposal.purpose.clone(),
+            beat_outline: proposal.beat_outline.clone(),
             conflict: proposal.conflict.clone(),
             outcome: proposal.outcome.clone(),
             pov_character_id: resolve_optional_character_id(
@@ -1035,15 +1045,16 @@ pub fn apply_scratchpad_result(
             r#"
             INSERT INTO scenes (
               id, project_id, chapter_id, order_index, title, summary, purpose,
-              conflict, outcome, pov_character_id, location, time_label,
-              manuscript_text, created_at, updated_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+              beat_outline, conflict, outcome, pov_character_id, location,
+              time_label, manuscript_text, created_at, updated_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
             ON CONFLICT(id) DO UPDATE SET
               chapter_id = excluded.chapter_id,
               order_index = excluded.order_index,
               title = excluded.title,
               summary = excluded.summary,
               purpose = excluded.purpose,
+              beat_outline = excluded.beat_outline,
               conflict = excluded.conflict,
               outcome = excluded.outcome,
               pov_character_id = excluded.pov_character_id,
@@ -1060,6 +1071,7 @@ pub fn apply_scratchpad_result(
                 save_input.title,
                 save_input.summary,
                 save_input.purpose,
+                save_input.beat_outline,
                 save_input.conflict,
                 save_input.outcome,
                 optional_string(save_input.pov_character_id.clone()),
@@ -1108,6 +1120,7 @@ pub fn apply_scratchpad_result(
                 "title",
                 "summary",
                 "purpose",
+                "beatOutline",
                 "conflict",
                 "outcome",
                 "povCharacterId",
@@ -1222,15 +1235,16 @@ pub fn save_scene(path: &Path, input: SaveSceneInput) -> Result<Scene> {
         r#"
         INSERT INTO scenes (
           id, project_id, chapter_id, order_index, title, summary, purpose,
-          conflict, outcome, pov_character_id, location, time_label,
-          manuscript_text, created_at, updated_at
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)
+          beat_outline, conflict, outcome, pov_character_id, location,
+          time_label, manuscript_text, created_at, updated_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
         ON CONFLICT(id) DO UPDATE SET
           chapter_id = excluded.chapter_id,
           order_index = excluded.order_index,
           title = excluded.title,
           summary = excluded.summary,
           purpose = excluded.purpose,
+          beat_outline = excluded.beat_outline,
           conflict = excluded.conflict,
           outcome = excluded.outcome,
           pov_character_id = excluded.pov_character_id,
@@ -1247,6 +1261,7 @@ pub fn save_scene(path: &Path, input: SaveSceneInput) -> Result<Scene> {
             input.title,
             input.summary,
             input.purpose,
+            input.beat_outline,
             input.conflict,
             input.outcome,
             optional_string(input.pov_character_id.clone()),
@@ -1610,6 +1625,7 @@ mod tests {
                         title: "The Signal".to_string(),
                         summary: "A signal interrupts the quiet morning.".to_string(),
                         purpose: "Inciting incident".to_string(),
+                        beat_outline: "Signal appears\nThe protagonist hesitates\nThe decision gets made".to_string(),
                         conflict: "Ignore it or investigate.".to_string(),
                         outcome: "The protagonist chooses to investigate.".to_string(),
                         pov_character_id: None,
@@ -1650,6 +1666,10 @@ mod tests {
         assert_eq!(refreshed.scenes.len(), 1);
         assert_eq!(refreshed.characters.len(), 1);
         assert_eq!(refreshed.scenes[0].chapter_id, Some(refreshed.chapters[0].id.clone()));
+        assert_eq!(
+            refreshed.scenes[0].beat_outline,
+            "Signal appears\nThe protagonist hesitates\nThe decision gets made"
+        );
 
         cleanup_db_files(&temp_path);
         Ok(())
@@ -1695,6 +1715,7 @@ mod tests {
                 title: "Scene 1".to_string(),
                 summary: String::new(),
                 purpose: String::new(),
+                beat_outline: String::new(),
                 conflict: String::new(),
                 outcome: String::new(),
                 pov_character_id: None,
@@ -1717,6 +1738,7 @@ mod tests {
                 title: "Scene 2".to_string(),
                 summary: String::new(),
                 purpose: String::new(),
+                beat_outline: String::new(),
                 conflict: String::new(),
                 outcome: String::new(),
                 pov_character_id: None,
@@ -1739,6 +1761,7 @@ mod tests {
                 title: "Scene 3".to_string(),
                 summary: String::new(),
                 purpose: String::new(),
+                beat_outline: String::new(),
                 conflict: String::new(),
                 outcome: String::new(),
                 pov_character_id: None,

@@ -32,6 +32,7 @@ export function ScenesView() {
       title: `Scene ${currentSnapshot.scenes.length + 1}`,
       summary: "",
       purpose: "",
+      beatOutline: "",
       conflict: "",
       outcome: "",
       povCharacterId: null,

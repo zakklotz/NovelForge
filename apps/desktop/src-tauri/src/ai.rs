@@ -103,6 +103,8 @@ struct RawScratchpadScene {
     #[serde(default)]
     purpose: String,
     #[serde(default)]
+    beat_outline: String,
+    #[serde(default)]
     conflict: String,
     #[serde(default)]
     outcome: String,
@@ -349,6 +351,7 @@ Return JSON only with this exact top-level shape:\n\
       \"title\": \"\",\n\
       \"summary\": \"\",\n\
       \"purpose\": \"\",\n\
+      \"beatOutline\": \"\",\n\
       \"conflict\": \"\",\n\
       \"outcome\": \"\",\n\
       \"povCharacterId\": null,\n\
@@ -383,6 +386,7 @@ Rules:\n\
 - Keep only fields you can support from the user's material.\n\
 - Use empty arrays when a section is not needed.\n\
 - Prefer concise, usable drafting structure over long prose.\n\
+- For beatOutline, prefer concise beat-by-beat planning over paragraphs.\n\
 - If existing ids are available in the context, use them. If not, you may use names/titles in id fields and NovelForge will attempt to resolve them.\n\
 - Never invent plot details that contradict the supplied context.\n\
 - For manuscriptText, keep any generated prose short and focused.",
@@ -460,6 +464,7 @@ fn map_result(raw: RawScratchpadResult) -> ScratchpadResult {
                 title: scene.title,
                 summary: scene.summary,
                 purpose: scene.purpose,
+                beat_outline: scene.beat_outline,
                 conflict: scene.conflict,
                 outcome: scene.outcome,
                 pov_character_id: scene.pov_character_id,

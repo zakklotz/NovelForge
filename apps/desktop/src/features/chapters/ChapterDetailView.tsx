@@ -49,6 +49,7 @@ export function ChapterDetailView() {
       title: `Scene ${chapterScenes.length + 1}`,
       summary: "",
       purpose: "",
+      beatOutline: "",
       conflict: "",
       outcome: "",
       povCharacterId: null,

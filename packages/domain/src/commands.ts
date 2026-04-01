@@ -57,6 +57,7 @@ export const saveSceneInputSchema = sceneSchema.pick({
   title: true,
   summary: true,
   purpose: true,
+  beatOutline: true,
   conflict: true,
   outcome: true,
   povCharacterId: true,

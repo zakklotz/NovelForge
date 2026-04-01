@@ -1,17 +1,36 @@
 import { useEffect, useState } from "react";
-import { useParams } from "@tanstack/react-router";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useNavigate, useParams } from "@tanstack/react-router";
+import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
-import { AlertTriangle, BookOpen, Save, Sparkles, Users } from "lucide-react";
-import { useShallow } from "zustand/react/shallow";
-import { Badge, Button, EmptyState, Field, Input, Panel, SectionHeading, Select, Textarea } from "@/components/ui";
+import {
+  AlertTriangle,
+  BookOpen,
+  FileText,
+  ListOrdered,
+  Save,
+  Sparkles,
+  Target,
+  Users,
+} from "lucide-react";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  Panel,
+  SectionHeading,
+  Select,
+  Textarea,
+} from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { splitCommaSeparated } from "@/lib/utils";
-import { useUiStore } from "@/store/uiStore";
-import type { Suggestion } from "@novelforge/domain";
+import { cn, splitCommaSeparated } from "@/lib/utils";
+import type { ProjectSnapshot, Suggestion } from "@novelforge/domain";
 
-function buildRelatedSuggestionIds(sceneId: string, suggestions: Suggestion[]) {
+type SceneWorkspaceTab = "overview" | "beats" | "draft";
+
+function findRelatedSuggestions(sceneId: string, suggestions: Suggestion[]) {
   return suggestions.filter(
     (suggestion) =>
       suggestion.sourceObject.id === sceneId ||
@@ -20,14 +39,43 @@ function buildRelatedSuggestionIds(sceneId: string, suggestions: Suggestion[]) {
   );
 }
 
+function buildStoryOrderedScenes(snapshot: ProjectSnapshot) {
+  const chapterOrder = new Map(
+    [...snapshot.chapters]
+      .sort((left, right) => left.orderIndex - right.orderIndex)
+      .map((chapter, index) => [chapter.id, index]),
+  );
+
+  return [...snapshot.scenes].sort((left, right) => {
+    const leftChapterOrder =
+      left.chapterId === null
+        ? Number.MAX_SAFE_INTEGER
+        : chapterOrder.get(left.chapterId) ?? Number.MAX_SAFE_INTEGER;
+    const rightChapterOrder =
+      right.chapterId === null
+        ? Number.MAX_SAFE_INTEGER
+        : chapterOrder.get(right.chapterId) ?? Number.MAX_SAFE_INTEGER;
+
+    return (
+      leftChapterOrder - rightChapterOrder ||
+      left.orderIndex - right.orderIndex ||
+      left.title.localeCompare(right.title)
+    );
+  });
+}
+
+function areListsEqual(left: string[], right: string[]) {
+  return (
+    left.length === right.length &&
+    left.every((value, index) => value === right[index])
+  );
+}
+
 export function SceneWorkspaceView() {
+  const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
   const snapshotQuery = useProjectSnapshot();
   const { saveScene, saveManuscript } = useProjectRuntime();
-  const [sidebarTab, setSidebarTab] = useUiStore(useShallow((state) => [
-    state.sceneSidebarTab,
-    state.setSceneSidebarTab,
-  ]));
   const snapshot = snapshotQuery.data;
 
   const scene = snapshot?.scenes.find((item) => item.id === sceneId);
@@ -39,13 +87,21 @@ export function SceneWorkspaceView() {
         scene?.povCharacterId === character.id,
     ) ?? [];
   const relatedSuggestions = scene
-    ? buildRelatedSuggestionIds(scene.id, snapshot?.suggestions ?? [])
+    ? findRelatedSuggestions(scene.id, snapshot?.suggestions ?? [])
     : [];
+  const chapterScenes =
+    snapshot?.scenes
+      .filter((item) => item.chapterId === scene?.chapterId)
+      .sort((left, right) => left.orderIndex - right.orderIndex) ?? [];
+  const storyOrderedScenes = snapshot ? buildStoryOrderedScenes(snapshot) : [];
+  const chapterById = new Map(snapshot?.chapters.map((item) => [item.id, item]) ?? []);
 
+  const [workspaceTab, setWorkspaceTab] = useState<SceneWorkspaceTab>("overview");
   const [draft, setDraft] = useState(scene?.manuscriptText ?? "<p></p>");
   const [title, setTitle] = useState(scene?.title ?? "");
   const [summary, setSummary] = useState(scene?.summary ?? "");
   const [purpose, setPurpose] = useState(scene?.purpose ?? "");
+  const [beatOutline, setBeatOutline] = useState(scene?.beatOutline ?? "");
   const [conflict, setConflict] = useState(scene?.conflict ?? "");
   const [outcome, setOutcome] = useState(scene?.outcome ?? "");
   const [location, setLocation] = useState(scene?.location ?? "");
@@ -65,10 +121,13 @@ export function SceneWorkspaceView() {
     if (!scene) {
       return;
     }
+
+    setWorkspaceTab("overview");
     setDraft(scene.manuscriptText);
     setTitle(scene.title);
     setSummary(scene.summary);
     setPurpose(scene.purpose);
+    setBeatOutline(scene.beatOutline);
     setConflict(scene.conflict);
     setOutcome(scene.outcome);
     setLocation(scene.location);
@@ -77,7 +136,7 @@ export function SceneWorkspaceView() {
     setContinuityTags(scene.continuityTags.join(", "));
     setInvolvedCharacterIds(scene.involvedCharacterIds);
     setDependencySceneIds(scene.dependencySceneIds);
-  }, [scene]);
+  }, [scene?.id]);
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -103,7 +162,7 @@ export function SceneWorkspaceView() {
     if (editor.getHTML() !== scene.manuscriptText) {
       editor.commands.setContent(scene.manuscriptText, false);
     }
-  }, [editor, scene]);
+  }, [editor, scene?.id, scene?.manuscriptText]);
 
   useEffect(() => {
     if (!scene || draft === scene.manuscriptText) {
@@ -132,22 +191,60 @@ export function SceneWorkspaceView() {
     );
   }
 
-  const currentSnapshot = snapshot;
   const currentScene = scene;
+  const normalizedContinuityTags = splitCommaSeparated(continuityTags);
+  const metadataChangedFields = [
+    title !== currentScene.title ? "title" : null,
+    summary !== currentScene.summary ? "summary" : null,
+    purpose !== currentScene.purpose ? "purpose" : null,
+    beatOutline !== currentScene.beatOutline ? "beatOutline" : null,
+    conflict !== currentScene.conflict ? "conflict" : null,
+    outcome !== currentScene.outcome ? "outcome" : null,
+    location !== currentScene.location ? "location" : null,
+    timeLabel !== currentScene.timeLabel ? "timeLabel" : null,
+    (povCharacterId || null) !== currentScene.povCharacterId ? "povCharacterId" : null,
+    !areListsEqual(normalizedContinuityTags, currentScene.continuityTags)
+      ? "continuityTags"
+      : null,
+    !areListsEqual(involvedCharacterIds, currentScene.involvedCharacterIds)
+      ? "involvedCharacterIds"
+      : null,
+    !areListsEqual(dependencySceneIds, currentScene.dependencySceneIds)
+      ? "dependencySceneIds"
+      : null,
+  ].filter((value): value is string => Boolean(value));
+  const metadataDirty = metadataChangedFields.length > 0;
+  const scenePosition = chapterScenes.findIndex((item) => item.id === currentScene.id);
+  const structuralPrompts = [
+    purpose
+      ? `Scene purpose: ${purpose}`
+      : "Clarify why this scene belongs in the story at all.",
+    beatOutline.trim()
+      ? "Check that each beat changes pressure, information, or emotional position."
+      : "Sketch the scene in 3 to 5 beats before polishing the prose.",
+    outcome
+      ? `Exit change: ${outcome}`
+      : "Decide what is different by the end of the scene.",
+  ];
 
   async function handleSaveMetadata() {
+    if (!metadataDirty) {
+      return;
+    }
+
     await saveScene(
       {
         ...currentScene,
         title,
         summary,
         purpose,
+        beatOutline,
         conflict,
         outcome,
         location,
         timeLabel,
         povCharacterId: povCharacterId || null,
-        continuityTags: splitCommaSeparated(continuityTags),
+        continuityTags: normalizedContinuityTags,
         involvedCharacterIds,
         dependencySceneIds,
         manuscriptText: draft,
@@ -158,65 +255,42 @@ export function SceneWorkspaceView() {
         occurredAt: new Date().toISOString(),
         type: "scene.updated",
         sceneId: currentScene.id,
-        changedFields: [
-          "title",
-          "summary",
-          "purpose",
-          "conflict",
-          "outcome",
-          "location",
-          "timeLabel",
-          "continuityTags",
-          "dependencySceneIds",
-        ],
+        changedFields: metadataChangedFields,
       },
     );
   }
-
-  const sceneOrder = currentSnapshot.scenes
-    .filter((item) => item.chapterId === currentScene.chapterId)
-    .sort((a, b) => a.orderIndex - b.orderIndex);
-
-  const structuralPrompts = [
-    scene.purpose ? `Push the scene toward: ${scene.purpose}` : "Clarify what this scene must accomplish.",
-    chapter?.purpose ? `Stay aligned with the chapter goal: ${chapter.purpose}` : "Consider how this scene advances its chapter.",
-    scene.outcome ? `Make the outcome land harder: ${scene.outcome}` : "Decide how the scene ends differently than it begins.",
-  ];
 
   return (
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
       <Panel className="min-h-0 overflow-y-auto">
         <SectionHeading
-          title="Scene Metadata"
-          description="Keep story logic attached to the prose while you draft."
+          title="Scene Frame"
+          description="Keep the scene's title, cast pressure, and continuity anchored while you plan and draft."
           actions={
-            <Button onClick={handleSaveMetadata}>
+            <Button onClick={handleSaveMetadata} disabled={!metadataDirty}>
               <Save className="size-4" />
-              Save Details
+              {metadataDirty ? "Save Planning" : "Planning Saved"}
             </Button>
           }
         />
+        <p className="mt-4 text-sm text-[var(--ink-muted)]">
+          {metadataDirty
+            ? "Planning changes are local until you save them."
+            : "Planning fields are in sync with the project snapshot."}
+        </p>
         <div className="mt-6 grid gap-4">
           <Field label="Title">
             <Input value={title} onChange={(event) => setTitle(event.target.value)} />
           </Field>
-          <Field label="Summary">
-            <Textarea value={summary} onChange={(event) => setSummary(event.target.value)} />
-          </Field>
-          <Field label="Purpose">
-            <Textarea value={purpose} onChange={(event) => setPurpose(event.target.value)} />
-          </Field>
-          <Field label="Conflict">
-            <Textarea value={conflict} onChange={(event) => setConflict(event.target.value)} />
-          </Field>
-          <Field label="Outcome">
-            <Textarea value={outcome} onChange={(event) => setOutcome(event.target.value)} />
-          </Field>
-          <Field label="Location">
-            <Input value={location} onChange={(event) => setLocation(event.target.value)} />
-          </Field>
-          <Field label="Time">
-            <Input value={timeLabel} onChange={(event) => setTimeLabel(event.target.value)} />
+          <Field label="Story Slot">
+            <Input
+              readOnly
+              value={
+                chapter && scenePosition >= 0
+                  ? `${chapter.title} · Scene ${scenePosition + 1} of ${chapterScenes.length}`
+                  : "Unassigned scene"
+              }
+            />
           </Field>
           <Field label="POV Character">
             <Select
@@ -231,6 +305,14 @@ export function SceneWorkspaceView() {
               ))}
             </Select>
           </Field>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
+            <Field label="Location">
+              <Input value={location} onChange={(event) => setLocation(event.target.value)} />
+            </Field>
+            <Field label="Time">
+              <Input value={timeLabel} onChange={(event) => setTimeLabel(event.target.value)} />
+            </Field>
+          </div>
           <Field label="Continuity Tags" hint="Comma-separated">
             <Input
               value={continuityTags}
@@ -240,7 +322,10 @@ export function SceneWorkspaceView() {
           <Field label="Involved Characters">
             <div className="grid gap-2 rounded-2xl border border-black/8 bg-white/60 p-3">
               {snapshot.characters.map((character) => (
-                <label key={character.id} className="flex items-center gap-2 text-sm text-[var(--ink)]">
+                <label
+                  key={character.id}
+                  className="flex items-center gap-2 text-sm text-[var(--ink)]"
+                >
                   <input
                     type="checkbox"
                     checked={involvedCharacterIds.includes(character.id)}
@@ -259,24 +344,38 @@ export function SceneWorkspaceView() {
           </Field>
           <Field label="Dependencies">
             <div className="grid gap-2 rounded-2xl border border-black/8 bg-white/60 p-3">
-              {snapshot.scenes
-                .filter((candidate) => candidate.id !== scene.id)
-                .map((candidate) => (
-                  <label key={candidate.id} className="flex items-center gap-2 text-sm text-[var(--ink)]">
-                    <input
-                      type="checkbox"
-                      checked={dependencySceneIds.includes(candidate.id)}
-                      onChange={(event) =>
-                        setDependencySceneIds((current) =>
-                          event.target.checked
-                            ? [...current, candidate.id]
-                            : current.filter((value) => value !== candidate.id),
-                        )
-                      }
-                    />
-                    {candidate.title}
-                  </label>
-                ))}
+              {storyOrderedScenes
+                .filter((candidate) => candidate.id !== currentScene.id)
+                .map((candidate) => {
+                  const candidateChapter = candidate.chapterId
+                    ? chapterById.get(candidate.chapterId)
+                    : null;
+
+                  return (
+                    <label
+                      key={candidate.id}
+                      className="grid gap-1 text-sm text-[var(--ink)]"
+                    >
+                      <span className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={dependencySceneIds.includes(candidate.id)}
+                          onChange={(event) =>
+                            setDependencySceneIds((current) =>
+                              event.target.checked
+                                ? [...current, candidate.id]
+                                : current.filter((value) => value !== candidate.id),
+                            )
+                          }
+                        />
+                        {candidate.title}
+                      </span>
+                      <span className="pl-6 text-xs text-[var(--ink-faint)]">
+                        {candidateChapter ? candidateChapter.title : "Unassigned"}
+                      </span>
+                    </label>
+                  );
+                })}
             </div>
           </Field>
         </div>
@@ -284,43 +383,31 @@ export function SceneWorkspaceView() {
 
       <Panel className="flex min-h-0 flex-col">
         <SectionHeading
-          title={scene.title}
-          description={chapter ? `${chapter.title} · ${scene.timeLabel || "Time not set"}` : "Unassigned chapter"}
+          title={title || currentScene.title}
+          description={
+            chapter
+              ? `${chapter.title} · ${timeLabel || "Time not set"}`
+              : "Unassigned chapter"
+          }
         />
-        <div className="mt-4 flex flex-wrap gap-2">
-          {sceneOrder.map((item) => (
-            <Badge key={item.id} tone={item.id === scene.id ? "accent" : "default"}>
-              {item.title}
-            </Badge>
-          ))}
-        </div>
-        <div className="prose-editor mt-6 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
-          <EditorContent editor={editor} />
-        </div>
-        <div className="mt-4 flex items-center justify-between text-sm text-[var(--ink-muted)]">
-          <span>Autosaves after a short pause.</span>
-          <span>{draft === scene.manuscriptText ? "Saved" : "Saving soon..."}</span>
-        </div>
-      </Panel>
-
-      <Panel className="min-h-0 overflow-y-auto">
-        <div className="flex gap-2 rounded-2xl bg-white/60 p-1">
+        <div className="mt-6 flex flex-wrap gap-2 rounded-2xl bg-white/60 p-1">
           {[
-            { id: "chapter", label: "Chapter", icon: BookOpen },
-            { id: "characters", label: "Characters", icon: Users },
-            { id: "warnings", label: "Warnings", icon: AlertTriangle },
+            { id: "overview", label: "Overview", icon: Target },
+            { id: "beats", label: "Beats", icon: ListOrdered },
+            { id: "draft", label: "Draft", icon: FileText },
           ].map((tab) => {
             const Icon = tab.icon;
-            const active = sidebarTab === tab.id;
+            const active = workspaceTab === tab.id;
             return (
               <button
                 key={tab.id}
-                className={`flex flex-1 items-center justify-center gap-2 rounded-xl px-3 py-2 text-sm font-medium transition ${
+                className={cn(
+                  "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition",
                   active
                     ? "bg-[var(--accent)] text-white"
-                    : "text-[var(--ink-muted)] hover:bg-white"
-                }`}
-                onClick={() => setSidebarTab(tab.id as never)}
+                    : "text-[var(--ink-muted)] hover:bg-white",
+                )}
+                onClick={() => setWorkspaceTab(tab.id as SceneWorkspaceTab)}
               >
                 <Icon className="size-4" />
                 {tab.label}
@@ -329,112 +416,247 @@ export function SceneWorkspaceView() {
           })}
         </div>
 
-        {sidebarTab === "chapter" ? (
-          <div className="mt-6 space-y-4">
-            <SectionHeading
-              title="Parent Chapter"
-              description={chapter?.summary || "This scene is currently unassigned."}
-            />
-            {chapter ? (
-              <>
-                <Field label="Chapter Purpose">
-                  <Textarea readOnly value={chapter.purpose} />
-                </Field>
-                <Field label="Emotional Movement">
-                  <Input readOnly value={chapter.emotionalMovement} />
-                </Field>
-              </>
-            ) : null}
-
-            <Panel className="bg-white/75">
-              <div className="flex items-center gap-2 text-[var(--accent-strong)]">
-                <Sparkles className="size-4" />
-                <h3 className="font-semibold">Suggested next beats</h3>
-              </div>
-              <ul className="mt-3 grid gap-2 text-sm text-[var(--ink-muted)]">
-                {structuralPrompts.map((prompt) => (
-                  <li key={prompt} className="rounded-2xl bg-white/70 px-3 py-3">
-                    {prompt}
-                  </li>
-                ))}
-              </ul>
-            </Panel>
+        {workspaceTab === "overview" ? (
+          <div className="mt-6 grid gap-4 overflow-y-auto pr-1 lg:grid-cols-2">
+            <Field label="Summary" className="lg:col-span-2">
+              <Textarea
+                className="min-h-28"
+                value={summary}
+                onChange={(event) => setSummary(event.target.value)}
+                placeholder="What happens in this scene at a high level?"
+              />
+            </Field>
+            <Field label="Purpose">
+              <Textarea
+                className="min-h-32"
+                value={purpose}
+                onChange={(event) => setPurpose(event.target.value)}
+                placeholder="Why does this scene exist in the story?"
+              />
+            </Field>
+            <Field label="Outcome">
+              <Textarea
+                className="min-h-32"
+                value={outcome}
+                onChange={(event) => setOutcome(event.target.value)}
+                placeholder="What changes by the end of the scene?"
+              />
+            </Field>
+            <Field label="Conflict" className="lg:col-span-2">
+              <Textarea
+                className="min-h-32"
+                value={conflict}
+                onChange={(event) => setConflict(event.target.value)}
+                placeholder="What pressure, opposition, or contradiction drives the scene?"
+              />
+            </Field>
           </div>
         ) : null}
 
-        {sidebarTab === "characters" ? (
-          <div className="mt-6 space-y-4">
-            <SectionHeading
-              title="Relevant Characters"
-              description="Keep voice, worldview, and arc pressure visible while drafting."
-            />
-            {relatedCharacters.map((character) => (
-              <Panel key={character.id} className="bg-white/75">
-                <h3 className="text-base font-semibold text-[var(--ink)]">
-                  {character.name}
-                </h3>
-                <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                  {character.role}
-                </p>
-                <div className="mt-4 grid gap-3 text-sm text-[var(--ink-muted)]">
-                  <div>
-                    <span className="font-semibold text-[var(--ink)]">Speaking style:</span>{" "}
-                    {character.speakingStyle || "Not defined yet."}
-                  </div>
-                  <div>
-                    <span className="font-semibold text-[var(--ink)]">Vocabulary:</span>{" "}
-                    {character.vocabularyTendencies || "Not defined yet."}
-                  </div>
-                  <div>
-                    <span className="font-semibold text-[var(--ink)]">Arc direction:</span>{" "}
-                    {character.arcDirection || "Not defined yet."}
-                  </div>
+        {workspaceTab === "beats" ? (
+          <div className="mt-6 flex min-h-0 flex-1 flex-col gap-4">
+            <Field label="Beat Outline" hint="One beat per line">
+              <Textarea
+                className="min-h-[18rem] flex-1"
+                value={beatOutline}
+                onChange={(event) => setBeatOutline(event.target.value)}
+                placeholder={
+                  "Opening image or status quo\nPressure enters\nTurn or reveal\nDecision\nExit state"
+                }
+              />
+            </Field>
+            <div className="grid gap-3 lg:grid-cols-3">
+              {structuralPrompts.map((prompt) => (
+                <div
+                  key={prompt}
+                  className="rounded-2xl border border-black/8 bg-white/72 px-4 py-4 text-sm text-[var(--ink-muted)]"
+                >
+                  {prompt}
                 </div>
-              </Panel>
-            ))}
+              ))}
+            </div>
           </div>
         ) : null}
 
-        {sidebarTab === "warnings" ? (
-          <div className="mt-6 space-y-4">
-            <SectionHeading
-              title="Continuity + Revision Warnings"
-              description="Suggestions generated from scene dependencies, chapter fit, and character changes."
-            />
-            {relatedSuggestions.length > 0 ? (
-              relatedSuggestions.map((suggestion) => (
-                <Panel key={suggestion.id} className="bg-white/80">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-semibold text-[var(--ink)]">
-                        {suggestion.title}
-                      </h3>
-                      <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                        {suggestion.rationale}
-                      </p>
-                    </div>
-                    <Badge
-                      tone={
-                        suggestion.severity === "high"
-                          ? "danger"
-                          : suggestion.severity === "medium"
-                            ? "warning"
-                            : "default"
-                      }
-                    >
-                      {suggestion.severity}
-                    </Badge>
-                  </div>
-                </Panel>
-              ))
+        {workspaceTab === "draft" ? (
+          <div className="mt-6 flex min-h-0 flex-1 flex-col">
+            <div className="flex items-center justify-between gap-4 text-sm text-[var(--ink-muted)]">
+              <span>Draft prose stays separate from scene planning and autosaves after a pause.</span>
+              <span>{draft === currentScene.manuscriptText ? "Saved" : "Saving soon..."}</span>
+            </div>
+            <div className="prose-editor mt-4 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
+              <EditorContent editor={editor} />
+            </div>
+          </div>
+        ) : null}
+      </Panel>
+
+      <Panel className="min-h-0 overflow-y-auto">
+        <SectionHeading
+          title="Context"
+          description="Keep chapter placement, nearby scenes, characters, and current analysis visible while you work."
+        />
+
+        <div className="mt-6 space-y-4">
+          <Panel className="bg-white/75">
+            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+              <BookOpen className="size-4" />
+              <h3 className="font-semibold">Parent Chapter</h3>
+            </div>
+            {chapter ? (
+              <div className="mt-3 grid gap-3 text-sm text-[var(--ink-muted)]">
+                <div>
+                  <p className="font-semibold text-[var(--ink)]">{chapter.title}</p>
+                  <p className="mt-1">{chapter.summary || "No chapter summary yet."}</p>
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--ink)]">Purpose:</span>{" "}
+                  {chapter.purpose || "Not defined yet."}
+                </div>
+                <div>
+                  <span className="font-semibold text-[var(--ink)]">Emotional movement:</span>{" "}
+                  {chapter.emotionalMovement || "Not defined yet."}
+                </div>
+              </div>
             ) : (
               <EmptyState
-                title="No warnings yet"
-                description="This scene currently has no open continuity or structure suggestions."
+                title="No parent chapter"
+                description="Assign this scene to a chapter to see its structural context here."
               />
             )}
-          </div>
-        ) : null}
+          </Panel>
+
+          <Panel className="bg-white/75">
+            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+              <Sparkles className="size-4" />
+              <h3 className="font-semibold">Nearby Scenes</h3>
+            </div>
+            {chapterScenes.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {chapterScenes.map((item, index) => (
+                  <button
+                    key={item.id}
+                    className={cn(
+                      "rounded-2xl border px-4 py-3 text-left transition",
+                      item.id === currentScene.id
+                        ? "border-[color:rgba(184,88,63,0.34)] bg-white"
+                        : "border-black/8 bg-white/70 hover:bg-white",
+                    )}
+                    onClick={() =>
+                      void navigate({
+                        to: "/scenes/$sceneId",
+                        params: { sceneId: item.id },
+                      })
+                    }
+                  >
+                    <div className="flex items-start gap-3">
+                      <Badge tone={item.id === currentScene.id ? "accent" : "default"}>
+                        {index + 1}
+                      </Badge>
+                      <div className="min-w-0">
+                        <p className="font-semibold text-[var(--ink)]">{item.title}</p>
+                        <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                          {item.summary || "No summary yet."}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No nearby scenes yet"
+                description="Once this chapter has more scenes, they will appear here in story order."
+              />
+            )}
+          </Panel>
+
+          <Panel className="bg-white/75">
+            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+              <Users className="size-4" />
+              <h3 className="font-semibold">Relevant Characters</h3>
+            </div>
+            {relatedCharacters.length > 0 ? (
+              <div className="mt-3 grid gap-3">
+                {relatedCharacters.map((character) => (
+                  <div
+                    key={character.id}
+                    className="rounded-2xl border border-black/8 bg-white/80 px-4 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <h4 className="font-semibold text-[var(--ink)]">{character.name}</h4>
+                        <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                          {character.role || "Role not defined yet."}
+                        </p>
+                      </div>
+                      {currentScene.povCharacterId === character.id ? (
+                        <Badge tone="accent">POV</Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-3 grid gap-2 text-sm text-[var(--ink-muted)]">
+                      <div>
+                        <span className="font-semibold text-[var(--ink)]">Speaking style:</span>{" "}
+                        {character.speakingStyle || "Not defined yet."}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-[var(--ink)]">Arc direction:</span>{" "}
+                        {character.arcDirection || "Not defined yet."}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No linked characters"
+                description="Add involved characters or a POV character to keep their story pressure visible here."
+              />
+            )}
+          </Panel>
+
+          <Panel className="bg-white/75">
+            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+              <AlertTriangle className="size-4" />
+              <h3 className="font-semibold">Suggestions + Analysis</h3>
+            </div>
+            {relatedSuggestions.length > 0 ? (
+              <div className="mt-3 grid gap-3">
+                {relatedSuggestions.map((suggestion) => (
+                  <div
+                    key={suggestion.id}
+                    className="rounded-2xl border border-black/8 bg-white/80 px-4 py-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-semibold text-[var(--ink)]">{suggestion.title}</p>
+                        <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                          {suggestion.rationale}
+                        </p>
+                      </div>
+                      <Badge
+                        tone={
+                          suggestion.severity === "high"
+                            ? "danger"
+                            : suggestion.severity === "medium"
+                              ? "warning"
+                              : "default"
+                        }
+                      >
+                        {suggestion.severity}
+                      </Badge>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                title="No scene-specific suggestions"
+                description="Continuity and structure suggestions connected to this scene will appear here."
+              />
+            )}
+          </Panel>
+        </div>
       </Panel>
     </div>
   );

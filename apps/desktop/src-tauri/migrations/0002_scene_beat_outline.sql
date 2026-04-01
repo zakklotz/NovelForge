@@ -1,0 +1,2 @@
+ALTER TABLE scenes
+ADD COLUMN beat_outline TEXT NOT NULL DEFAULT '';

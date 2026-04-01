@@ -7,7 +7,7 @@ export const sampleProjectSnapshot: ProjectSnapshot = {
     id: "project-ashen-sky",
     title: "Ashen Sky",
     logline: "A failed smuggler has one week to escort a living star-map through a collapsing empire.",
-    schemaVersion: 1,
+    schemaVersion: 2,
     settings: {
       autosaveIntervalMs: 1500,
       autoAnalyze: true,
@@ -56,6 +56,8 @@ export const sampleProjectSnapshot: ProjectSnapshot = {
       title: "Dock Nine Exchange",
       summary: "Ava meets the client and realizes the cargo is alive.",
       purpose: "Inciting incident",
+      beatOutline:
+        "Ava meets the client at Dock Nine.\nThe crate reacts to her touch.\nShe takes the job even though the setup feels wrong.",
       conflict: "Ava wants a quick payout; the client keeps withholding facts.",
       outcome: "Ava takes the package anyway.",
       povCharacterId: "char-ava",
@@ -77,6 +79,8 @@ export const sampleProjectSnapshot: ProjectSnapshot = {
       title: "The Crate Speaks",
       summary: "The cargo addresses Ava by name once they are alone.",
       purpose: "Show the map has agency.",
+      beatOutline:
+        "Ava isolates the crate.\nThe voice inside addresses her directly.\nShe agrees to protect it until sunrise.",
       conflict: "Ava wants silence; the map wants trust.",
       outcome: "Ava agrees to protect it until sunrise.",
       povCharacterId: "char-ava",
@@ -98,6 +102,8 @@ export const sampleProjectSnapshot: ProjectSnapshot = {
       title: "Checkpoint Lanterns",
       summary: "Ava and Rian bluff their way through a militarized border check.",
       purpose: "Introduce the external chase.",
+      beatOutline:
+        "The inspection starts routine.\nVale recognizes Ava.\nThey cross, but the warning goes out ahead of them.",
       conflict: "The inspector recognizes Ava from old smuggling reports.",
       outcome: "They cross, but the inspector sends word ahead.",
       povCharacterId: "char-ava",
