@@ -37,26 +37,31 @@ function describeNavigationTarget(pathname: string) {
   if (pathname === "/settings") {
     return "open Settings";
   }
-  return "leave this scene workspace";
+  return "leave this workspace";
 }
 
-function toErrorMessage(error: unknown) {
+function describeWorkspaceLabel(kind: "scene" | "chapter") {
+  return kind === "chapter" ? "chapter" : "scene";
+}
+
+function toErrorMessage(error: unknown, workspaceLabel: string) {
   return error instanceof Error
     ? error.message
-    : "NovelForge could not finish that scene workspace action.";
+    : `NovelForge could not finish that ${workspaceLabel} workspace action.`;
 }
 
 export function SceneWorkspaceLeavePrompt() {
   const [session, pendingAction, setPendingAction] = useUiStore(
     useShallow((state) => [
-      state.sceneWorkspaceSession,
-      state.pendingSceneWorkspaceAction,
-      state.setPendingSceneWorkspaceAction,
+      state.workspaceSession,
+      state.pendingWorkspaceAction,
+      state.setPendingWorkspaceAction,
     ]),
   );
   const [activeChoice, setActiveChoice] = useState<"save" | "discard" | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const hasUnsavedChanges = Boolean(session && session.dirtyAreas.length > 0);
+  const workspaceLabel = session ? describeWorkspaceLabel(session.kind) : "workspace";
 
   const blocker = useBlocker({
     shouldBlockFn: () => hasUnsavedChanges,
@@ -69,7 +74,7 @@ export function SceneWorkspaceLeavePrompt() {
     pendingAction?.targetLabel ??
     (blocker.status === "blocked"
       ? describeNavigationTarget(blocker.next.pathname)
-      : "leave this scene workspace");
+      : `leave this ${workspaceLabel} workspace`);
 
   useEffect(() => {
     if (!isOpen) {
@@ -110,7 +115,7 @@ export function SceneWorkspaceLeavePrompt() {
         await blocker.proceed?.();
       }
     } catch (error) {
-      setErrorMessage(toErrorMessage(error));
+      setErrorMessage(toErrorMessage(error, workspaceLabel));
     } finally {
       setActiveChoice(null);
     }
@@ -145,11 +150,11 @@ export function SceneWorkspaceLeavePrompt() {
           </div>
           <div className="min-w-0 space-y-2">
             <h2 className="text-xl font-semibold text-[var(--ink)]">
-              Unsaved scene changes
+              Unsaved {workspaceLabel} changes
             </h2>
             <p className="text-sm text-[var(--ink-muted)]">
               <span className="font-semibold text-[var(--ink)]">
-                {session.sceneTitle}
+                {session.entityTitle}
               </span>{" "}
               has unsaved {dirtySummary}. Save them before you {targetLabel}?
             </p>

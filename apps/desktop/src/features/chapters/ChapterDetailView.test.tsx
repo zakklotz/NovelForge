@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { sampleProjectSnapshot } from "@novelforge/test-fixtures";
@@ -68,7 +68,13 @@ describe("Chapter workspace", () => {
     tauriApiMock.closeProject.mockResolvedValue(undefined);
     tauriApiMock.getProjectSnapshot.mockImplementation(async () => currentSnapshot);
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
-    tauriApiMock.saveProjectState.mockResolvedValue(currentSnapshot.projectState);
+    tauriApiMock.saveProjectState.mockImplementation(async (projectState) => {
+      currentSnapshot = {
+        ...currentSnapshot,
+        projectState,
+      };
+      return projectState;
+    });
     tauriApiMock.getAppSettings.mockResolvedValue({
       ai: {
         defaultProvider: "gemini",
@@ -124,6 +130,7 @@ describe("Chapter workspace", () => {
   });
 
   afterEach(() => {
+    cleanup();
     useUiStore.getState().resetUi();
   });
 
@@ -217,6 +224,116 @@ describe("Chapter workspace", () => {
     ).toBe(
       "Ava commits to the mission while the chapter tightens around that choice.",
     );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("persists the active chapter workspace route", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    await waitFor(() => {
+      expect(tauriApiMock.saveProjectState).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: currentSnapshot.project.id,
+          lastRoute: "/chapters/chapter-1",
+        }),
+      );
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("blocks chapter switches until the user saves or cancels", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    const summaryPlaceholder = "Summarize the chapter's visible movement.";
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(summaryPlaceholder)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(summaryPlaceholder), {
+      target: {
+        value: "Ava updates the chapter plan before leaving this workspace.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /chapter 2: border sparks/i }),
+    );
+
+    await screen.findByText("Unsaved chapter changes");
+    expect(window.location.pathname).toBe("/chapters/chapter-1");
+
+    fireEvent.click(screen.getByRole("button", { name: /cancel/i }));
+
+    await waitFor(() => {
+      expect(screen.queryByText("Unsaved chapter changes")).toBeNull();
+    });
+    expect(window.location.pathname).toBe("/chapters/chapter-1");
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /chapter 2: border sparks/i }),
+    );
+
+    await screen.findByText("Unsaved chapter changes");
+    fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.saveChapter).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "chapter-1",
+          summary: "Ava updates the chapter plan before leaving this workspace.",
+        }),
+      );
+    });
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/chapters/chapter-2");
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("protects pending project actions and allows discarding local chapter edits", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    const summaryPlaceholder = "Summarize the chapter's visible movement.";
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(summaryPlaceholder)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(summaryPlaceholder), {
+      target: {
+        value: "This should be discarded before closing the project.",
+      },
+    });
+
+    const closeProjectAction = vi.fn(async () => undefined);
+
+    await act(async () => {
+      useUiStore.getState().setPendingWorkspaceAction({
+        targetLabel: "close the current project",
+        runAction: closeProjectAction,
+      });
+    });
+
+    await screen.findByText("Unsaved chapter changes");
+    fireEvent.click(screen.getByRole("button", { name: /discard changes/i }));
+
+    await waitFor(() => {
+      expect(closeProjectAction).toHaveBeenCalledTimes(1);
+    });
+
+    expect(
+      (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
+    ).toBe("Ava accepts a courier job she does not understand.");
 
     unmount();
     queryClient.clear();

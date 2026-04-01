@@ -8,7 +8,7 @@ import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { Button, EmptyState, Field, Input, Panel } from "@/components/ui";
 import { useUiStore } from "@/store/uiStore";
-import { normalizeProjectRoute } from "@/lib/routes";
+import { resolveProjectRouteNavigation } from "@/lib/routes";
 import { AppShell } from "./AppShell";
 import { SettingsView } from "@/features/settings/SettingsView";
 
@@ -91,8 +91,8 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const snapshotQuery = useProjectSnapshot();
   const navigate = useNavigate();
   const currentProjectId = useUiStore((state) => state.currentProjectId);
-  const setPendingSceneWorkspaceAction = useUiStore(
-    (state) => state.setPendingSceneWorkspaceAction,
+  const setPendingWorkspaceAction = useUiStore(
+    (state) => state.setPendingWorkspaceAction,
   );
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { createProject, openProject, restoreLastProject, closeProject } =
@@ -104,16 +104,25 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const hasAttemptedRestore = useRef(false);
 
   const openWorkspace = useEffectEvent(async (route: string | null | undefined) => {
-    const targetRoute = normalizeProjectRoute(route);
-    await navigate({ to: targetRoute });
+    const target = resolveProjectRouteNavigation(route);
+
+    if (target.to === "/chapters/$chapterId") {
+      await navigate({
+        to: target.to,
+        params: target.params,
+      });
+      return;
+    }
+
+    await navigate({ to: target.to });
   });
 
   const runProtectedProjectAction = useEffectEvent(
     async (targetLabel: string, action: () => Promise<void>) => {
-      const session = useUiStore.getState().sceneWorkspaceSession;
+      const session = useUiStore.getState().workspaceSession;
 
       if (session && session.dirtyAreas.length > 0) {
-        setPendingSceneWorkspaceAction({
+        setPendingWorkspaceAction({
           targetLabel,
           runAction: action,
         });
@@ -207,13 +216,13 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   });
 
   const handleNativeCloseRequested = useEffectEvent(async () => {
-    const session = useUiStore.getState().sceneWorkspaceSession;
+    const session = useUiStore.getState().workspaceSession;
 
     if (!session || session.dirtyAreas.length === 0) {
       return false;
     }
 
-    setPendingSceneWorkspaceAction({
+    setPendingWorkspaceAction({
       targetLabel: CLOSE_APP_TARGET_LABEL,
       runAction: async () => {
         await getCurrentWindow().destroy();

@@ -135,4 +135,41 @@ describe("AppRouter loaded project flow", () => {
     unmount();
     queryClient.clear();
   });
+
+  it("restores the last open chapter workspace route on launch", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/chapters/chapter-1",
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByDisplayValue("Chapter 1: The Wrong Package"),
+    ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
 });

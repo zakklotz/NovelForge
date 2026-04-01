@@ -1,17 +1,18 @@
 import { create } from "zustand";
 import type { DomainEvent } from "@novelforge/domain";
 
-export type SceneWorkspaceDirtyArea = "planning" | "draft";
+export type WorkspaceDirtyArea = "planning" | "draft";
 
-export interface SceneWorkspaceSession {
-  sceneId: string;
-  sceneTitle: string;
-  dirtyAreas: SceneWorkspaceDirtyArea[];
+export interface WorkspaceSession {
+  kind: "scene" | "chapter";
+  entityId: string;
+  entityTitle: string;
+  dirtyAreas: WorkspaceDirtyArea[];
   saveChanges: () => Promise<void>;
   discardChanges: () => Promise<void>;
 }
 
-export interface PendingSceneWorkspaceAction {
+export interface PendingWorkspaceAction {
   targetLabel: string;
   runAction: () => Promise<void>;
 }
@@ -23,8 +24,8 @@ interface UiState {
   searchText: string;
   analysisQueue: DomainEvent[];
   isAnalyzing: boolean;
-  sceneWorkspaceSession: SceneWorkspaceSession | null;
-  pendingSceneWorkspaceAction: PendingSceneWorkspaceAction | null;
+  workspaceSession: WorkspaceSession | null;
+  pendingWorkspaceAction: PendingWorkspaceAction | null;
   setCurrentProjectId: (projectId: string | null) => void;
   setSelectedChapterId: (chapterId: string | null) => void;
   setSelectedCharacterId: (characterId: string | null) => void;
@@ -32,10 +33,8 @@ interface UiState {
   enqueueAnalysis: (event: DomainEvent) => void;
   dequeueAnalysis: () => void;
   setIsAnalyzing: (isAnalyzing: boolean) => void;
-  setSceneWorkspaceSession: (session: SceneWorkspaceSession | null) => void;
-  setPendingSceneWorkspaceAction: (
-    action: PendingSceneWorkspaceAction | null,
-  ) => void;
+  setWorkspaceSession: (session: WorkspaceSession | null) => void;
+  setPendingWorkspaceAction: (action: PendingWorkspaceAction | null) => void;
   resetUi: () => void;
 }
 
@@ -46,8 +45,8 @@ const initialState = {
   searchText: "",
   analysisQueue: [],
   isAnalyzing: false,
-  sceneWorkspaceSession: null,
-  pendingSceneWorkspaceAction: null,
+  workspaceSession: null,
+  pendingWorkspaceAction: null,
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -61,9 +60,8 @@ export const useUiStore = create<UiState>((set) => ({
   dequeueAnalysis: () =>
     set((state) => ({ analysisQueue: state.analysisQueue.slice(1) })),
   setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
-  setSceneWorkspaceSession: (sceneWorkspaceSession) =>
-    set({ sceneWorkspaceSession }),
-  setPendingSceneWorkspaceAction: (pendingSceneWorkspaceAction) =>
-    set({ pendingSceneWorkspaceAction }),
+  setWorkspaceSession: (workspaceSession) => set({ workspaceSession }),
+  setPendingWorkspaceAction: (pendingWorkspaceAction) =>
+    set({ pendingWorkspaceAction }),
   resetUi: () => set(initialState),
 }));

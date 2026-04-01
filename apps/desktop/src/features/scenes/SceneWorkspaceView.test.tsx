@@ -386,7 +386,7 @@ describe("Scene workspace unsaved change protection", () => {
     });
 
     await act(async () => {
-      useUiStore.getState().setPendingSceneWorkspaceAction({
+      useUiStore.getState().setPendingWorkspaceAction({
         targetLabel: "close the current project",
         runAction: async () => {
           await tauriApiMock.closeProject();

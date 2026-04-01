@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { Chapter } from "@novelforge/domain";
 import {
@@ -111,6 +111,7 @@ export function ChapterDetailView() {
   const { chapterId } = useParams({ from: "/chapters/$chapterId" });
   const snapshotQuery = useProjectSnapshot();
   const { saveChapter, saveScene } = useProjectRuntime();
+  const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
 
@@ -122,11 +123,18 @@ export function ChapterDetailView() {
     chapter ? buildChapterPlanningState(chapter) : emptyChapterPlanningState(),
   );
   const planningRef = useRef(planning);
+  const currentChapterRef = useRef(chapter ?? null);
   const activeChapterIdRef = useRef<string | null>(null);
+  const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
 
   useEffect(() => {
     planningRef.current = planning;
   }, [planning]);
+
+  useEffect(() => {
+    currentChapterRef.current = chapter ?? null;
+  }, [chapter]);
 
   useEffect(() => {
     if (!chapter) {
@@ -148,6 +156,40 @@ export function ChapterDetailView() {
     });
     setSelectedChapterId(chapter.id);
   }, [chapter, setSelectedChapterId]);
+
+  const chapterDirty = Boolean(chapter) && !arePlanningStatesEqual(planning, persistedPlanning);
+  const dirtyAreas = chapterDirty ? (["planning"] as const) : [];
+  const canSave = planning.title.trim().length > 0;
+
+  useLayoutEffect(() => {
+    if (!chapter) {
+      setWorkspaceSession(null);
+      return;
+    }
+
+    setWorkspaceSession({
+      kind: "chapter",
+      entityId: chapter.id,
+      entityTitle: planning.title.trim() || chapter.title,
+      dirtyAreas: [...dirtyAreas],
+      saveChanges: saveCurrentWorkspaceChanges,
+      discardChanges: discardCurrentWorkspaceChanges,
+    });
+  }, [chapter, dirtyAreas, planning.title, setWorkspaceSession]);
+
+  useLayoutEffect(() => {
+    if (!chapter) {
+      return;
+    }
+
+    const currentChapterId = chapter.id;
+    return () => {
+      const session = useUiStore.getState().workspaceSession;
+      if (session?.kind === "chapter" && session.entityId === currentChapterId) {
+        useUiStore.getState().setWorkspaceSession(null);
+      }
+    };
+  }, [chapter?.id]);
 
   if (!snapshot) {
     return null;
@@ -172,8 +214,6 @@ export function ChapterDetailView() {
   const focusedCharacters = currentSnapshot.characters.filter((character) =>
     planning.characterFocusIds.includes(character.id),
   );
-  const chapterDirty = !arePlanningStatesEqual(planning, persistedPlanning);
-  const canSave = planning.title.trim().length > 0;
 
   function updatePlanningField<Key extends keyof ChapterPlanningState>(
     field: Key,
@@ -182,33 +222,60 @@ export function ChapterDetailView() {
     setPlanning((current) => ({ ...current, [field]: value }));
   }
 
-  async function handleSaveChapter() {
-    if (!chapterDirty || !canSave) {
+  async function saveCurrentWorkspaceChanges() {
+    if (workspaceSavePromiseRef.current) {
+      return workspaceSavePromiseRef.current;
+    }
+
+    const chapterToSave = currentChapterRef.current;
+    if (!chapterToSave || !chapterDirty) {
       return;
     }
 
-    await saveChapter(
-      {
-        id: currentChapter.id,
-        projectId: currentChapter.projectId,
-        title: planning.title.trim(),
-        summary: planning.summary,
-        purpose: planning.purpose,
-        majorEvents: splitLines(planning.majorEvents),
-        emotionalMovement: planning.emotionalMovement,
-        characterFocusIds: planning.characterFocusIds,
-        setupPayoffNotes: planning.setupPayoffNotes,
-        orderIndex: currentChapter.orderIndex,
-      },
-      {
-        id: crypto.randomUUID(),
-        projectId: currentChapter.projectId,
-        occurredAt: new Date().toISOString(),
-        type: "chapter.updated",
-        chapterId: currentChapter.id,
-        changedFields: getChangedFields(planning, persistedPlanning),
-      },
-    );
+    if (!canSave) {
+      throw new Error("Chapter title cannot be empty.");
+    }
+
+    setIsSavingWorkspace(true);
+
+    const savePromise = (async () => {
+      await saveChapter(
+        {
+          id: chapterToSave.id,
+          projectId: chapterToSave.projectId,
+          title: planning.title.trim(),
+          summary: planning.summary,
+          purpose: planning.purpose,
+          majorEvents: splitLines(planning.majorEvents),
+          emotionalMovement: planning.emotionalMovement,
+          characterFocusIds: planning.characterFocusIds,
+          setupPayoffNotes: planning.setupPayoffNotes,
+          orderIndex: chapterToSave.orderIndex,
+        },
+        {
+          id: crypto.randomUUID(),
+          projectId: chapterToSave.projectId,
+          occurredAt: new Date().toISOString(),
+          type: "chapter.updated",
+          chapterId: chapterToSave.id,
+          changedFields: getChangedFields(planning, persistedPlanning),
+        },
+      );
+    })().finally(() => {
+      workspaceSavePromiseRef.current = null;
+      setIsSavingWorkspace(false);
+    });
+
+    workspaceSavePromiseRef.current = savePromise;
+    return savePromise;
+  }
+
+  async function discardCurrentWorkspaceChanges() {
+    setPlanning(persistedPlanning);
+  }
+
+  async function handleSaveChapter() {
+    await saveCurrentWorkspaceChanges();
   }
 
   async function handleCreateScene() {
@@ -234,9 +301,16 @@ export function ChapterDetailView() {
                 <ArrowLeft className="size-4" />
                 Back
               </Button>
-              <Button onClick={() => void handleSaveChapter()} disabled={!chapterDirty || !canSave}>
+              <Button
+                onClick={() => void handleSaveChapter()}
+                disabled={!chapterDirty || !canSave || isSavingWorkspace}
+              >
                 <Save className="size-4" />
-                {chapterDirty ? "Save Chapter" : "Saved"}
+                {isSavingWorkspace
+                  ? "Saving..."
+                  : chapterDirty
+                    ? "Save Chapter"
+                    : "Saved"}
               </Button>
             </div>
           }

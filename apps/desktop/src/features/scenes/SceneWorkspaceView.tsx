@@ -206,9 +206,7 @@ export function SceneWorkspaceView() {
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
   const snapshotQuery = useProjectSnapshot();
   const { saveScene, saveManuscript } = useProjectRuntime();
-  const setSceneWorkspaceSession = useUiStore(
-    (state) => state.setSceneWorkspaceSession,
-  );
+  const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const snapshot = snapshotQuery.data;
 
   const scene = snapshot?.scenes.find((item) => item.id === sceneId);
@@ -459,13 +457,14 @@ export function SceneWorkspaceView() {
 
   useLayoutEffect(() => {
     if (!scene) {
-      setSceneWorkspaceSession(null);
+      setWorkspaceSession(null);
       return;
     }
 
-    setSceneWorkspaceSession({
-      sceneId: scene.id,
-      sceneTitle: planning.title.trim() || scene.title,
+    setWorkspaceSession({
+      kind: "scene",
+      entityId: scene.id,
+      entityTitle: planning.title.trim() || scene.title,
       dirtyAreas,
       saveChanges: saveCurrentWorkspaceChanges,
       discardChanges: discardCurrentWorkspaceChanges,
@@ -474,7 +473,7 @@ export function SceneWorkspaceView() {
     dirtyAreas,
     planning.title,
     scene,
-    setSceneWorkspaceSession,
+    setWorkspaceSession,
   ]);
 
   useLayoutEffect(() => {
@@ -484,8 +483,9 @@ export function SceneWorkspaceView() {
 
     const currentSceneId = scene.id;
     return () => {
-      if (useUiStore.getState().sceneWorkspaceSession?.sceneId === currentSceneId) {
-        useUiStore.getState().setSceneWorkspaceSession(null);
+      const session = useUiStore.getState().workspaceSession;
+      if (session?.kind === "scene" && session.entityId === currentSceneId) {
+        useUiStore.getState().setWorkspaceSession(null);
       }
     };
   }, [scene?.id]);
