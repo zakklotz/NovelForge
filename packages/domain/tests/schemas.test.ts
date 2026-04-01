@@ -170,6 +170,27 @@ describe("domain schemas", () => {
     );
   });
 
+  it("defaults sparse structured story diagnostics to empty review sections", () => {
+    const parsed = structuredAiResponseSchema.parse({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "story-diagnose-structure",
+      assistantMessage: "Reviewed the current spine.",
+      result: {
+        summary: "No forced findings.",
+        storyStructureDiagnostic: {
+          underdefinedChapters: [],
+        },
+      },
+    });
+
+    expect(parsed.result.storyStructureDiagnostic.underdefinedChapters).toEqual([]);
+    expect(parsed.result.storyStructureDiagnostic.briefAlignmentNotes).toEqual([]);
+    expect(parsed.result.storyStructureDiagnostic.endingDirectionPreparation).toEqual([]);
+    expect(parsed.result.storyStructureDiagnostic.setupPayoffSupport).toEqual([]);
+    expect(parsed.result.storyStructureDiagnostic.nextPlanningTargets).toEqual([]);
+  });
+
   it("exposes the approved first-class suggestion commands", () => {
     expect(
       applySuggestionInputSchema.parse({

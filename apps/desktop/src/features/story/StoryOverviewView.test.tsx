@@ -662,6 +662,71 @@ describe("StoryOverviewView", () => {
     queryClient.clear();
   });
 
+  it("keeps sparse brief diagnostic sections quiet when findings are intentionally empty", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      project: {
+        ...currentSnapshot.project,
+        logline: "",
+        premise: "",
+        centralConflict: "",
+        thematicIntent: "",
+        endingDirection: "",
+        genre: "",
+        tone: "",
+        audienceNotes: "",
+      },
+    };
+
+    const response = createStoryDiagnosticResponse();
+    response.assistantMessage = "Reviewed the current spine for gaps.";
+    response.result.summary = "No additional review notes surfaced from the sparse brief.";
+    response.result.storyStructureDiagnostic = {
+      underdefinedChapters: [],
+      redundantFunctions: [],
+      missingTransitions: [],
+      briefAlignmentNotes: [],
+      endingDirectionPreparation: [],
+      setupPayoffSupport: [],
+      nextPlanningTargets: [],
+    };
+    tauriApiMock.runStructuredAiAction.mockResolvedValue(response);
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze Story Structure",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Structure Review")).toBeTruthy();
+    });
+
+    expect(screen.getByText("0 review notes")).toBeTruthy();
+    expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "No meaningful story-brief support or risk notes surfaced in this review pass.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Setup/Payoff Support")).toBeTruthy();
+    expect(
+      screen.getByText("No setup/payoff support concerns surfaced in this review pass."),
+    ).toBeTruthy();
+    expect(screen.queryByText("Ending Direction Preparation")).toBeNull();
+    expect(screen.queryByText("Support")).toBeNull();
+    expect(screen.queryByText("Risk")).toBeNull();
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("opens the chapter workspace from a diagnostic jump action", async () => {
     tauriApiMock.runStructuredAiAction.mockResolvedValue(createStoryDiagnosticResponse());
 

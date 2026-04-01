@@ -2064,6 +2064,70 @@ mod tests {
     }
 
     #[test]
+    fn structured_parser_keeps_irrelevant_story_diagnostic_sections_empty_when_missing_or_blank() {
+        let raw = r#"
+{
+  "assistantMessage": "Reviewed the whole spine.",
+  "result": {
+    "summary": "Optional sections can stay empty.",
+    "sceneProposals": [],
+    "beatOutline": "",
+    "manuscriptText": "",
+    "storyStructureDiagnostic": {
+      "briefAlignmentNotes": [
+        {
+          "title": "",
+          "detail": "Blank titles should be ignored.",
+          "alignment": "risk"
+        }
+      ],
+      "endingDirectionPreparation": [
+        {}
+      ],
+      "setupPayoffSupport": [
+        {
+          "title": "  ",
+          "detail": "Blank titles should be ignored here too."
+        }
+      ]
+    }
+  }
+}
+"#;
+
+        let (_, result) = parse_structured_action_response("story-diagnose-structure", raw);
+
+        assert!(result
+            .story_structure_diagnostic
+            .underdefined_chapters
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .redundant_functions
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .missing_transitions
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .brief_alignment_notes
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .ending_direction_preparation
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .setup_payoff_support
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
+            .next_planning_targets
+            .is_empty());
+    }
+
+    #[test]
     fn structured_parser_falls_back_to_plain_text_for_beats() {
         let (assistant_message, result) =
             parse_structured_action_response("scene-generate-beats", "Beat one\nBeat two");
@@ -2100,6 +2164,33 @@ mod tests {
         assert!(prompt.contains("result.storyStructureDiagnostic.endingDirectionPreparation"));
         assert!(prompt.contains("If the saved brief has no meaningful ending direction"));
         assert!(prompt.contains("result.storyStructureDiagnostic.setupPayoffSupport"));
+        assert!(
+            prompt.contains("If there is not enough evidence of a meaningful setup/payoff thread")
+        );
+    }
+
+    #[test]
+    fn structured_story_diagnostic_prompt_handles_sparse_brief_without_forcing_findings() {
+        let mut snapshot = sample_project_snapshot();
+        snapshot.project.logline.clear();
+        snapshot.project.premise.clear();
+        snapshot.project.central_conflict.clear();
+        snapshot.project.thematic_intent.clear();
+        snapshot.project.ending_direction.clear();
+        snapshot.project.genre.clear();
+        snapshot.project.tone.clear();
+
+        let prompt = build_structured_user_prompt(
+            &snapshot,
+            &sample_structured_input("story-diagnose-structure"),
+        )
+        .expect("story diagnostic prompt should build for a sparse brief");
+
+        assert!(prompt.contains("No additional saved story brief anchors are currently filled"));
+        assert!(
+            prompt.contains("If the saved brief is sparse, generic, or not materially relevant")
+        );
+        assert!(prompt.contains("If the saved brief has no meaningful ending direction"));
         assert!(
             prompt.contains("If there is not enough evidence of a meaningful setup/payoff thread")
         );
