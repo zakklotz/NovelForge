@@ -26,6 +26,7 @@ import {
   Field,
   Input,
   Panel,
+  Select,
   SectionHeading,
   Textarea,
 } from "@/components/ui";
@@ -133,6 +134,14 @@ function countFilledStoryBriefFields(storyBrief: StoryBriefState) {
 
 function buildOrderedChapters(snapshot: ProjectSnapshot) {
   return [...snapshot.chapters].sort((left, right) => left.orderIndex - right.orderIndex);
+}
+
+function getOrderedScenesInBucket<
+  SceneLike extends { chapterId: string | null; orderIndex: number },
+>(scenes: SceneLike[], chapterId: string | null) {
+  return scenes
+    .filter((scene) => (scene.chapterId ?? null) === chapterId)
+    .sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
 function buildChapterSceneMap(snapshot: ProjectSnapshot) {
@@ -273,6 +282,18 @@ function buildChapterSearchText(chapter: Chapter, scenes: Scene[]) {
     chapter.summary,
     chapter.purpose,
     ...scenes.flatMap((scene) => [scene.title, scene.summary, scene.purpose]),
+  ]
+    .join(" ")
+    .toLowerCase();
+}
+
+function buildSceneSearchText(scene: Scene) {
+  return [
+    scene.title,
+    scene.summary,
+    scene.purpose,
+    scene.location,
+    scene.timeLabel,
   ]
     .join(" ")
     .toLowerCase();
@@ -488,7 +509,8 @@ export function StoryOverviewView() {
   const snapshotQuery = useProjectSnapshot();
   const appSettingsQuery = useAppSettings();
   const { runStructuredAiAction } = useAiRuntime();
-  const { reorderChapters, saveChapter, setProjectMetadata } = useProjectRuntime();
+  const { moveScene, reorderChapters, saveChapter, setProjectMetadata } =
+    useProjectRuntime();
   const searchText = useUiStore((state) => state.searchText);
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
@@ -516,6 +538,10 @@ export function StoryOverviewView() {
     useState<StructuredAiResponse | null>(null);
   const [isAnalyzingStory, setIsAnalyzingStory] = useState(false);
   const [storyDiagnosticError, setStoryDiagnosticError] = useState<string | null>(null);
+  const [movingUnassignedSceneId, setMovingUnassignedSceneId] = useState<string | null>(null);
+  const [unassignedMoveTargets, setUnassignedMoveTargets] = useState<
+    Record<string, string>
+  >({});
   const storyBriefDirty =
     Boolean(snapshot) && !areStoryBriefStatesEqual(storyBrief, persistedStoryBrief);
   const dirtyStoryBriefFields = storyBriefDirty
@@ -620,9 +646,16 @@ export function StoryOverviewView() {
       normalizedSearchText,
     );
   });
+  const unassignedScenes = getOrderedScenesInBucket(currentSnapshot.scenes, null);
+  const filteredUnassignedScenes = unassignedScenes.filter((scene) => {
+    if (!normalizedSearchText) {
+      return true;
+    }
+
+    return buildSceneSearchText(scene).includes(normalizedSearchText);
+  });
   const mappedSceneCount = currentSnapshot.scenes.filter((scene) => scene.chapterId !== null).length;
-  const unassignedSceneCount =
-    currentSnapshot.scenes.filter((scene) => scene.chapterId === null).length;
+  const unassignedSceneCount = unassignedScenes.length;
   const chaptersNeedingAttentionCount = orderedChapters.filter((chapter) => {
     const chapterDiagnosticSummary = buildChapterDiagnosticSummary(
       chapter,
@@ -638,7 +671,17 @@ export function StoryOverviewView() {
     0,
   );
   const filledStoryBriefFieldCount = countFilledStoryBriefFields(storyBrief);
-  const isMutatingStructure = isAddingChapter || movingChapterId !== null;
+  const isMutatingStructure =
+    isAddingChapter || movingChapterId !== null || movingUnassignedSceneId !== null;
+  const hasVisiblePlanningEntries =
+    filteredChapters.length > 0 || filteredUnassignedScenes.length > 0;
+
+  function getUnassignedMoveTarget(sceneId: string) {
+    const targetChapterId = unassignedMoveTargets[sceneId];
+    return orderedChapters.some((chapter) => chapter.id === targetChapterId)
+      ? targetChapterId
+      : (orderedChapters[0]?.id ?? "");
+  }
 
   function updateStoryBriefField<Key extends keyof StoryBriefState>(
     field: Key,
@@ -765,6 +808,80 @@ export function StoryOverviewView() {
       );
     } finally {
       setMovingChapterId(null);
+    }
+  }
+
+  async function handleMoveUnassignedScene(
+    sceneId: string,
+    direction: "earlier" | "later",
+  ) {
+    const currentIndex = unassignedScenes.findIndex((scene) => scene.id === sceneId);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const desiredIndex = direction === "earlier" ? currentIndex - 1 : currentIndex + 1;
+    if (desiredIndex < 0 || desiredIndex >= unassignedScenes.length) {
+      return;
+    }
+
+    // Downward moves are modeled as insert-after positions in the backend ordering flow.
+    const targetIndex = direction === "later" ? desiredIndex + 1 : desiredIndex;
+
+    setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setMovingUnassignedSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId: null,
+        targetIndex,
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not update the unassigned scene order.",
+      );
+    } finally {
+      setMovingUnassignedSceneId(null);
+    }
+  }
+
+  async function handleAssignUnassignedScene(sceneId: string) {
+    const targetChapterId = getUnassignedMoveTarget(sceneId);
+    if (!targetChapterId) {
+      return;
+    }
+
+    const targetChapterScenes = getOrderedScenesInBucket(
+      currentSnapshot.scenes,
+      targetChapterId,
+    );
+
+    setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setMovingUnassignedSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId,
+        targetIndex: targetChapterScenes.length,
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not place this scene onto the story spine.",
+      );
+    } finally {
+      setMovingUnassignedSceneId(null);
     }
   }
 
@@ -1070,25 +1187,6 @@ export function StoryOverviewView() {
         </div>
       </div>
 
-      {unassignedSceneCount > 0 ? (
-        <Panel className="mt-6 bg-white/75 shadow-none">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-[var(--ink)]">
-                {unassignedSceneCount} unassigned scene
-                {unassignedSceneCount === 1 ? "" : "s"} still sit off the spine
-              </p>
-              <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                Place them on the scene board when they are ready to join chapter order.
-              </p>
-            </div>
-            <Button variant="secondary" onClick={() => void navigate({ to: "/scenes" })}>
-              Open Scenes Board
-            </Button>
-          </div>
-        </Panel>
-      ) : null}
-
       {!hasConfiguredAi ? (
         <Panel className="mt-6 bg-[color:rgba(194,151,57,0.12)] shadow-none">
           <p className="text-sm text-[var(--warning)]">
@@ -1274,12 +1372,12 @@ export function StoryOverviewView() {
       ) : null}
 
       <div className="mt-6 grid gap-4">
-        {filteredChapters.length === 0 ? (
+        {!hasVisiblePlanningEntries ? (
           <EmptyState
             title={normalizedSearchText ? "No chapters match this filter" : "No chapters yet"}
             description={
               normalizedSearchText
-                ? "Try a different quick filter to bring chapters and scenes back into view."
+                ? "Try a different quick filter to bring chapters and unassigned scenes back into view."
                 : "Create the first chapter here to start shaping the full story structure."
             }
             action={
@@ -1290,167 +1388,320 @@ export function StoryOverviewView() {
             }
           />
         ) : (
-          filteredChapters.map((chapter) => {
-            const scenes = chapterScenes[chapter.id] ?? [];
-            const chapterDiagnosticSummary = buildChapterDiagnosticSummary(
-              chapter,
-              scenes,
-              typicalMappedChapterSceneCount,
-            );
-            const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
-            const isFirstChapter = currentChapterIndex === 0;
-            const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
-            return (
-              <article
-                key={chapter.id}
-                className="rounded-[1.75rem] border border-black/8 bg-white/78 px-5 py-5 shadow-[0_18px_40px_rgba(38,27,16,0.07)]"
-              >
-                <div className="flex flex-wrap items-start justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-faint)]">
-                      Chapter {chapter.orderIndex + 1}
-                    </p>
-                    <h3 className="mt-2 text-xl font-semibold text-[var(--ink)]">
-                      {chapter.title}
-                    </h3>
-                  </div>
-
-                  <div className="flex flex-col items-start gap-3 sm:items-end">
+          <>
+            {filteredUnassignedScenes.length > 0 ? (
+              <section className="rounded-[1.75rem] border border-black/8 bg-[color:rgba(232,191,114,0.08)] px-5 py-5 shadow-[0_18px_40px_rgba(38,27,16,0.07)]">
+                <SectionHeading
+                  title="Unassigned Scenes"
+                  description="A deliberate holding area for scenes that belong in the plan, but are not yet placed on the chapter spine."
+                  actions={
                     <div className="flex flex-wrap items-center gap-2">
-                      <Badge tone="accent">
-                        {scenes.length} scene{scenes.length === 1 ? "" : "s"}
+                      <Badge tone="warning">
+                        {filteredUnassignedScenes.length === unassignedSceneCount
+                          ? `${unassignedSceneCount} scene${
+                              unassignedSceneCount === 1 ? "" : "s"
+                            }`
+                          : `${filteredUnassignedScenes.length} of ${unassignedSceneCount} scenes`}
                       </Badge>
-                      {chapterDiagnosticSummary.badges.map((badge) => (
-                        <Badge key={`${chapter.id}-${badge.label}`} tone={badge.tone}>
-                          {badge.label}
-                        </Badge>
-                      ))}
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        variant="ghost"
-                        className="px-3 py-2"
-                        onClick={() => void handleMoveChapter(chapter.id, "earlier")}
-                        disabled={isMutatingStructure || isFirstChapter}
-                        aria-label={`Move ${chapter.title} earlier`}
-                      >
-                        <ArrowUp className="size-4" />
-                        Earlier
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        className="px-3 py-2"
-                        onClick={() => void handleMoveChapter(chapter.id, "later")}
-                        disabled={isMutatingStructure || isLastChapter}
-                        aria-label={`Move ${chapter.title} later`}
-                      >
-                        <ArrowDown className="size-4" />
-                        Later
-                      </Button>
                       <Button
                         variant="secondary"
-                        onClick={() => {
-                          setSelectedChapterId(chapter.id);
-                          void navigate({
-                            to: "/chapters/$chapterId",
-                            params: { chapterId: chapter.id },
-                          });
-                        }}
+                        onClick={() => void navigate({ to: "/scenes" })}
                         disabled={isMutatingStructure}
                       >
-                        Open Chapter Workspace
+                        Open Scenes Board
                       </Button>
                     </div>
-                  </div>
-                </div>
+                  }
+                />
 
-                <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)]">
-                  <div className="grid gap-4">
-                    <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-                        Purpose
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
-                        {chapter.purpose || "No chapter purpose captured yet."}
-                      </p>
-                    </div>
+                <div className="mt-4 grid gap-3">
+                  {filteredUnassignedScenes.map((scene) => {
+                    const unassignedIndex = unassignedScenes.findIndex(
+                      (candidate) => candidate.id === scene.id,
+                    );
+                    const isFirstUnassigned = unassignedIndex === 0;
+                    const isLastUnassigned =
+                      unassignedIndex === unassignedScenes.length - 1;
+                    const targetChapterId = getUnassignedMoveTarget(scene.id);
 
-                    <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-                        Summary
-                      </p>
-                      <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
-                        {chapter.summary || "No chapter summary captured yet."}
-                      </p>
-                    </div>
-
-                    {chapterDiagnosticSummary.notes.length > 0 ? (
-                      <div className="rounded-2xl border border-[color:rgba(232,191,114,0.28)] bg-[color:rgba(232,191,114,0.08)] px-4 py-4">
-                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--warning)]">
-                          Structure Signals
-                        </p>
-                        <div className="mt-2 grid gap-2 text-sm leading-6 text-[var(--ink-muted)]">
-                          {chapterDiagnosticSummary.notes.map((note) => (
-                            <p key={`${chapter.id}-${note}`}>{note}</p>
-                          ))}
-                        </div>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  <div className="grid gap-2">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-                        Scene Path
-                      </p>
-                      <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                        Open any scene workspace directly from the chapter flow.
-                      </p>
-                    </div>
-
-                    {scenes.length > 0 ? (
-                      <div className="grid gap-2">
-                        {scenes.map((scene) => (
-                          <button
-                            key={scene.id}
-                            className="rounded-2xl border border-black/8 bg-white/72 px-4 py-3 text-left transition hover:border-black/15 hover:bg-white"
-                            onClick={() => {
-                              setSelectedChapterId(chapter.id);
-                              void navigate({
-                                to: "/scenes/$sceneId",
-                                params: { sceneId: scene.id },
-                              });
-                            }}
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div className="min-w-0">
-                                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
-                                  Scene {scene.orderIndex + 1}
-                                </p>
-                                <p className="mt-1 font-semibold text-[var(--ink)]">
-                                  {scene.title}
-                                </p>
-                              </div>
-                              <ChevronRight className="mt-1 size-4 shrink-0 text-[var(--ink-faint)]" />
-                            </div>
-
+                    return (
+                      <div
+                        key={scene.id}
+                        className="rounded-3xl border border-black/8 bg-white/80 px-4 py-4"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--warning)]">
+                              Unassigned scene {unassignedIndex + 1}
+                            </p>
+                            <p className="mt-2 text-lg font-semibold text-[var(--ink)]">
+                              {scene.title}
+                            </p>
                             <p className="mt-2 text-sm text-[var(--ink-muted)]">
                               {scene.summary || scene.purpose || "No scene summary captured yet."}
                             </p>
-                          </button>
+                            <p className="mt-2 text-sm text-[var(--ink-faint)]">
+                              {[scene.location, scene.timeLabel].filter(Boolean).join(" · ") ||
+                                "Location and time are still open."}
+                            </p>
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Button
+                              variant="ghost"
+                              className="px-3 py-2"
+                              onClick={() =>
+                                void handleMoveUnassignedScene(scene.id, "earlier")
+                              }
+                              disabled={isMutatingStructure || isFirstUnassigned}
+                              aria-label={`Move ${scene.title} earlier in unassigned`}
+                            >
+                              <ArrowUp className="size-4" />
+                              Earlier
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              className="px-3 py-2"
+                              onClick={() =>
+                                void handleMoveUnassignedScene(scene.id, "later")
+                              }
+                              disabled={isMutatingStructure || isLastUnassigned}
+                              aria-label={`Move ${scene.title} later in unassigned`}
+                            >
+                              <ArrowDown className="size-4" />
+                              Later
+                            </Button>
+                            <Button
+                              variant="secondary"
+                              className="px-3 py-2"
+                              onClick={() => {
+                                setSelectedChapterId(null);
+                                void navigate({
+                                  to: "/scenes/$sceneId",
+                                  params: { sceneId: scene.id },
+                                });
+                              }}
+                              disabled={isMutatingStructure}
+                              aria-label={`Open ${scene.title}`}
+                            >
+                              <ChevronRight className="size-4" />
+                              Open
+                            </Button>
+                          </div>
+                        </div>
+
+                        {orderedChapters.length > 0 ? (
+                          <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
+                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
+                              <Field
+                                label="Move Into Chapter"
+                                hint="Appends at chapter end"
+                              >
+                                <Select
+                                  value={targetChapterId}
+                                  onChange={(event) =>
+                                    setUnassignedMoveTargets((currentTargets) => ({
+                                      ...currentTargets,
+                                      [scene.id]: event.target.value,
+                                    }))
+                                  }
+                                >
+                                  {orderedChapters.map((chapter) => (
+                                    <option key={chapter.id} value={chapter.id}>
+                                      {chapter.title}
+                                    </option>
+                                  ))}
+                                </Select>
+                              </Field>
+
+                              <Button
+                                onClick={() => void handleAssignUnassignedScene(scene.id)}
+                                disabled={!targetChapterId || isMutatingStructure}
+                              >
+                                Move to Chapter
+                              </Button>
+                            </div>
+
+                            <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                              Uses the saved backend move model and chapter scene order,
+                              just like the other structure views.
+                            </p>
+                          </div>
+                        ) : (
+                          <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-4 text-sm text-[var(--ink-muted)]">
+                            Create the first chapter when you are ready to place this
+                            scene onto the spine.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            ) : null}
+
+            {filteredChapters.map((chapter) => {
+              const scenes = chapterScenes[chapter.id] ?? [];
+              const chapterDiagnosticSummary = buildChapterDiagnosticSummary(
+                chapter,
+                scenes,
+                typicalMappedChapterSceneCount,
+              );
+              const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
+              const isFirstChapter = currentChapterIndex === 0;
+              const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
+              return (
+                <article
+                  key={chapter.id}
+                  className="rounded-[1.75rem] border border-black/8 bg-white/78 px-5 py-5 shadow-[0_18px_40px_rgba(38,27,16,0.07)]"
+                >
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-faint)]">
+                        Chapter {chapter.orderIndex + 1}
+                      </p>
+                      <h3 className="mt-2 text-xl font-semibold text-[var(--ink)]">
+                        {chapter.title}
+                      </h3>
+                    </div>
+
+                    <div className="flex flex-col items-start gap-3 sm:items-end">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Badge tone="accent">
+                          {scenes.length} scene{scenes.length === 1 ? "" : "s"}
+                        </Badge>
+                        {chapterDiagnosticSummary.badges.map((badge) => (
+                          <Badge key={`${chapter.id}-${badge.label}`} tone={badge.tone}>
+                            {badge.label}
+                          </Badge>
                         ))}
                       </div>
-                    ) : (
-                      <div className="rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">
-                        No scenes are assigned to this chapter yet.
+
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Button
+                          variant="ghost"
+                          className="px-3 py-2"
+                          onClick={() => void handleMoveChapter(chapter.id, "earlier")}
+                          disabled={isMutatingStructure || isFirstChapter}
+                          aria-label={`Move ${chapter.title} earlier`}
+                        >
+                          <ArrowUp className="size-4" />
+                          Earlier
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          className="px-3 py-2"
+                          onClick={() => void handleMoveChapter(chapter.id, "later")}
+                          disabled={isMutatingStructure || isLastChapter}
+                          aria-label={`Move ${chapter.title} later`}
+                        >
+                          <ArrowDown className="size-4" />
+                          Later
+                        </Button>
+                        <Button
+                          variant="secondary"
+                          onClick={() => {
+                            setSelectedChapterId(chapter.id);
+                            void navigate({
+                              to: "/chapters/$chapterId",
+                              params: { chapterId: chapter.id },
+                            });
+                          }}
+                          disabled={isMutatingStructure}
+                        >
+                          Open Chapter Workspace
+                        </Button>
                       </div>
-                    )}
+                    </div>
                   </div>
-                </div>
-              </article>
-            );
-          })
+
+                  <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)]">
+                    <div className="grid gap-4">
+                      <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                          Purpose
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
+                          {chapter.purpose || "No chapter purpose captured yet."}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                          Summary
+                        </p>
+                        <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
+                          {chapter.summary || "No chapter summary captured yet."}
+                        </p>
+                      </div>
+
+                      {chapterDiagnosticSummary.notes.length > 0 ? (
+                        <div className="rounded-2xl border border-[color:rgba(232,191,114,0.28)] bg-[color:rgba(232,191,114,0.08)] px-4 py-4">
+                          <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--warning)]">
+                            Structure Signals
+                          </p>
+                          <div className="mt-2 grid gap-2 text-sm leading-6 text-[var(--ink-muted)]">
+                            {chapterDiagnosticSummary.notes.map((note) => (
+                              <p key={`${chapter.id}-${note}`}>{note}</p>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+
+                    <div className="grid gap-2">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                          Scene Path
+                        </p>
+                        <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                          Open any scene workspace directly from the chapter flow.
+                        </p>
+                      </div>
+
+                      {scenes.length > 0 ? (
+                        <div className="grid gap-2">
+                          {scenes.map((scene) => (
+                            <button
+                              key={scene.id}
+                              className="rounded-2xl border border-black/8 bg-white/72 px-4 py-3 text-left transition hover:border-black/15 hover:bg-white"
+                              onClick={() => {
+                                setSelectedChapterId(chapter.id);
+                                void navigate({
+                                  to: "/scenes/$sceneId",
+                                  params: { sceneId: scene.id },
+                                });
+                              }}
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                                    Scene {scene.orderIndex + 1}
+                                  </p>
+                                  <p className="mt-1 font-semibold text-[var(--ink)]">
+                                    {scene.title}
+                                  </p>
+                                </div>
+                                <ChevronRight className="mt-1 size-4 shrink-0 text-[var(--ink-faint)]" />
+                              </div>
+
+                              <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                                {scene.summary || scene.purpose || "No scene summary captured yet."}
+                              </p>
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">
+                          No scenes are assigned to this chapter yet.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </>
         )}
       </div>
     </Panel>

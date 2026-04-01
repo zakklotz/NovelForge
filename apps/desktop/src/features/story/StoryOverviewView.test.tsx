@@ -15,6 +15,7 @@ const tauriApiMock = vi.hoisted(() => ({
   setProjectMetadata: vi.fn(),
   saveChapter: vi.fn(),
   reorderChapters: vi.fn(),
+  moveScene: vi.fn(),
   syncSuggestions: vi.fn(),
   saveProjectState: vi.fn(),
   getAppSettings: vi.fn(),
@@ -37,7 +38,7 @@ vi.mock("@/lib/tauri", () => ({
     saveChapter: tauriApiMock.saveChapter,
     reorderChapters: tauriApiMock.reorderChapters,
     saveScene: vi.fn(),
-    moveScene: vi.fn(),
+    moveScene: tauriApiMock.moveScene,
     saveManuscript: vi.fn(),
     saveCharacter: vi.fn(),
     listSuggestions: vi.fn(),
@@ -90,6 +91,18 @@ function createScene(
   };
 }
 
+function createUnassignedScene(id: string, orderIndex: number, title: string) {
+  return {
+    ...sampleProjectSnapshot.scenes[0],
+    id,
+    chapterId: null,
+    orderIndex,
+    title,
+    summary: `${title} summary`,
+    purpose: `${title} purpose`,
+  };
+}
+
 function reorderChaptersInSnapshot(
   snapshot: typeof sampleProjectSnapshot,
   chapterIds: string[],
@@ -105,6 +118,57 @@ function reorderChaptersInSnapshot(
         updatedAt: "2026-04-01T12:00:00.000Z",
       }))
       .sort((left, right) => left.orderIndex - right.orderIndex),
+  };
+}
+
+function moveSceneInSnapshot(
+  snapshot: typeof sampleProjectSnapshot,
+  sceneId: string,
+  targetChapterId: string | null,
+  targetIndex: number,
+) {
+  const movingScene = snapshot.scenes.find((scene) => scene.id === sceneId);
+  if (!movingScene) {
+    throw new Error(`Scene ${sceneId} not found.`);
+  }
+
+  const sourceChapterId = movingScene.chapterId ?? null;
+  const bucketIds = Array.from(new Set([sourceChapterId, targetChapterId]));
+  const scenesByBucket = new Map(
+    bucketIds.map((chapterId) => [
+      chapterId,
+      snapshot.scenes
+        .filter(
+          (scene) => (scene.chapterId ?? null) === chapterId && scene.id !== sceneId,
+        )
+        .sort((left, right) => left.orderIndex - right.orderIndex),
+    ]),
+  );
+  const targetScenes = [...(scenesByBucket.get(targetChapterId) ?? [])];
+  const clampedTargetIndex = Math.max(0, Math.min(targetIndex, targetScenes.length));
+
+  targetScenes.splice(clampedTargetIndex, 0, {
+    ...movingScene,
+    chapterId: targetChapterId,
+  });
+  scenesByBucket.set(targetChapterId, targetScenes);
+
+  const updatedScenesById = new Map<string, (typeof snapshot.scenes)[number]>();
+  for (const scenes of scenesByBucket.values()) {
+    scenes.forEach((scene, index) => {
+      updatedScenesById.set(scene.id, {
+        ...scene,
+        orderIndex: index,
+        updatedAt: "2026-04-01T12:00:00.000Z",
+      });
+    });
+  }
+
+  return {
+    ...snapshot,
+    scenes: snapshot.scenes.map((scene) =>
+      updatedScenesById.get(scene.id) ?? scene,
+    ),
   };
 }
 
@@ -345,6 +409,16 @@ describe("StoryOverviewView", () => {
         return currentSnapshot.chapters;
       },
     );
+    tauriApiMock.moveScene.mockImplementation(async (input) => {
+      currentSnapshot = moveSceneInSnapshot(
+        currentSnapshot,
+        input.sceneId,
+        input.targetChapterId ?? null,
+        input.targetIndex,
+      );
+
+      return currentSnapshot.scenes.find((scene) => scene.id === input.sceneId)!;
+    });
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
     tauriApiMock.saveProjectState.mockImplementation(async (projectState) => {
       currentSnapshot = {
@@ -914,6 +988,182 @@ describe("StoryOverviewView", () => {
         "5 scenes here while the current spine usually lands around 3.",
       ),
     ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("shows unassigned scenes as a first-class story spine bucket", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "A deliberate holding area for scenes that belong in the plan, but are not yet placed on the chapter spine.",
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("Ashfall Detour")).toBeTruthy();
+    expect(screen.getByText("Unassigned scene 1")).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("opens an unassigned scene from the story spine bucket", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Open Ashfall Detour" }));
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/scenes/scene-unassigned");
+    });
+
+    expect(screen.getByText("Scene Frame")).toBeTruthy();
+    expect(useUiStore.getState().selectedChapterId).toBeNull();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("reorders unassigned scenes through the backend move command", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned-1", 0, "Ashfall Detour"),
+        createUnassignedScene("scene-unassigned-2", 1, "Glass Harbor"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move ashfall detour later in unassigned/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-unassigned-1",
+      targetChapterId: null,
+      targetIndex: 2,
+    });
+
+    await waitFor(() => {
+      const firstScene = screen.getByText("Glass Harbor");
+      const secondScene = screen.getByText("Ashfall Detour");
+      expect(
+        firstScene.compareDocumentPosition(secondScene) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves an unassigned scene into a chapter through the backend move command", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+      target: { value: "chapter-2" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-unassigned",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Unassigned Scenes")).toBeNull();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved story brief edits in place when moving an unassigned scene refreshes the snapshot", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value: "A courier keeps one scene off the spine while the brief keeps changing.",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect((screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value).toBe(
+      "A courier keeps one scene off the spine while the brief keeps changing.",
+    );
 
     unmount();
     queryClient.clear();
