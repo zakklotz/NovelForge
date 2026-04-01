@@ -414,6 +414,11 @@ pub struct ApplyScratchpadResultOutput {
 pub struct CreateProjectInput {
     pub title: String,
     pub logline: String,
+    pub premise: String,
+    pub central_conflict: String,
+    pub thematic_intent: String,
+    pub genre: String,
+    pub tone: String,
     pub path: String,
 }
 

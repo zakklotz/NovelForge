@@ -16,6 +16,11 @@ import {
 export const createProjectInputSchema = z.object({
   title: z.string().min(1),
   logline: z.string().default(""),
+  premise: z.string().default(""),
+  centralConflict: z.string().default(""),
+  thematicIntent: z.string().default(""),
+  genre: z.string().default(""),
+  tone: z.string().default(""),
   path: z.string(),
 });
 

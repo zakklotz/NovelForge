@@ -115,7 +115,7 @@ pub fn migrate(connection: &mut Connection) -> Result<()> {
 fn create_default_project_state(project_id: &str) -> ProjectState {
     ProjectState {
         project_id: project_id.to_string(),
-        last_route: "/chapters".to_string(),
+        last_route: "/story".to_string(),
         open_scene_ids: vec![],
         selected_ids: vec![],
         view_filters: ViewFilters {
@@ -518,12 +518,12 @@ pub fn create_project(input: CreateProjectInput) -> Result<(PathBuf, ProjectSnap
             project_id,
             input.title,
             input.logline,
+            input.premise,
+            input.central_conflict,
+            input.thematic_intent,
             "",
-            "",
-            "",
-            "",
-            "",
-            "",
+            input.genre,
+            input.tone,
             "",
             latest_schema_version(),
             to_json(&settings)?,
@@ -1672,12 +1672,17 @@ mod tests {
         let (_, snapshot) = create_project(CreateProjectInput {
             title: "Smoke Test Novel".to_string(),
             logline: "A migration smoke test project.".to_string(),
+            premise: "".to_string(),
+            central_conflict: "".to_string(),
+            thematic_intent: "".to_string(),
+            genre: "".to_string(),
+            tone: "".to_string(),
             path: temp_path.to_string_lossy().into_owned(),
         })?;
 
         assert_eq!(snapshot.project.schema_version, latest_schema_version());
         assert_eq!(snapshot.project_state.project_id, snapshot.project.id);
-        assert_eq!(snapshot.project_state.last_route, "/chapters");
+        assert_eq!(snapshot.project_state.last_route, "/story");
         assert_eq!(snapshot.project.premise, "");
         assert_eq!(snapshot.project.central_conflict, "");
         assert_eq!(snapshot.project.thematic_intent, "");
@@ -1695,6 +1700,54 @@ mod tests {
     }
 
     #[test]
+    fn create_project_can_seed_story_brief_fields() -> Result<()> {
+        let temp_path = std::env::temp_dir().join(format!(
+            "novelforge-project-create-seed-{}.novelforge",
+            Uuid::new_v4()
+        ));
+        cleanup_db_files(&temp_path);
+
+        let (_, snapshot) = create_project(CreateProjectInput {
+            title: "Ashen Sky".to_string(),
+            logline: "A disgraced courier must smuggle a living map across a collapsing empire."
+                .to_string(),
+            premise: "A failed courier becomes the only safe carrier for a living map."
+                .to_string(),
+            central_conflict:
+                "Every faction wants the map, and Ava does not trust herself to protect it."
+                    .to_string(),
+            thematic_intent: "Explore when responsibility turns into chosen freedom."
+                .to_string(),
+            genre: "Science-fantasy adventure".to_string(),
+            tone: "Tense and wonder-struck".to_string(),
+            path: temp_path.to_string_lossy().into_owned(),
+        })?;
+
+        assert_eq!(snapshot.project_state.last_route, "/story");
+        assert_eq!(
+            snapshot.project.logline,
+            "A disgraced courier must smuggle a living map across a collapsing empire."
+        );
+        assert_eq!(
+            snapshot.project.premise,
+            "A failed courier becomes the only safe carrier for a living map."
+        );
+        assert_eq!(
+            snapshot.project.central_conflict,
+            "Every faction wants the map, and Ava does not trust herself to protect it."
+        );
+        assert_eq!(
+            snapshot.project.thematic_intent,
+            "Explore when responsibility turns into chosen freedom."
+        );
+        assert_eq!(snapshot.project.genre, "Science-fantasy adventure");
+        assert_eq!(snapshot.project.tone, "Tense and wonder-struck");
+
+        cleanup_db_files(&temp_path);
+        Ok(())
+    }
+
+    #[test]
     fn save_project_metadata_round_trips_story_brief_fields() -> Result<()> {
         let temp_path = std::env::temp_dir().join(format!(
             "novelforge-project-brief-{}.novelforge",
@@ -1705,6 +1758,11 @@ mod tests {
         let (_, snapshot) = create_project(CreateProjectInput {
             title: "Ashen Sky".to_string(),
             logline: "A smuggler escorts a living map.".to_string(),
+            premise: "".to_string(),
+            central_conflict: "".to_string(),
+            thematic_intent: "".to_string(),
+            genre: "".to_string(),
+            tone: "".to_string(),
             path: temp_path.to_string_lossy().into_owned(),
         })?;
 
@@ -1786,6 +1844,11 @@ mod tests {
         let (_, snapshot) = create_project(CreateProjectInput {
             title: "Scratchpad Smoke Test".to_string(),
             logline: "A structured scratchpad apply smoke test.".to_string(),
+            premise: "".to_string(),
+            central_conflict: "".to_string(),
+            thematic_intent: "".to_string(),
+            genre: "".to_string(),
+            tone: "".to_string(),
             path: temp_path.to_string_lossy().into_owned(),
         })?;
 
@@ -1878,6 +1941,11 @@ mod tests {
         let (_, snapshot) = create_project(CreateProjectInput {
             title: "Scene Order Test".to_string(),
             logline: "Verify new scenes append in chapter order.".to_string(),
+            premise: "".to_string(),
+            central_conflict: "".to_string(),
+            thematic_intent: "".to_string(),
+            genre: "".to_string(),
+            tone: "".to_string(),
             path: temp_path.to_string_lossy().into_owned(),
         })?;
 
