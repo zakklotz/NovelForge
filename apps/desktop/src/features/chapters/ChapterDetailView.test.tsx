@@ -13,6 +13,7 @@ const tauriApiMock = vi.hoisted(() => ({
   getProjectSnapshot: vi.fn(),
   saveChapter: vi.fn(),
   saveScene: vi.fn(),
+  moveScene: vi.fn(),
   syncSuggestions: vi.fn(),
   saveProjectState: vi.fn(),
   getAppSettings: vi.fn(),
@@ -34,7 +35,7 @@ vi.mock("@/lib/tauri", () => ({
     saveChapter: tauriApiMock.saveChapter,
     reorderChapters: vi.fn(),
     saveScene: tauriApiMock.saveScene,
-    moveScene: vi.fn(),
+    moveScene: tauriApiMock.moveScene,
     saveManuscript: vi.fn(),
     saveCharacter: vi.fn(),
     listSuggestions: vi.fn(),
@@ -57,6 +58,55 @@ class MockWorker {
   removeEventListener() {}
   postMessage() {}
   terminate() {}
+}
+
+function moveSceneWithinChapterSnapshot(
+  snapshot: typeof sampleProjectSnapshot,
+  sceneId: string,
+  targetChapterId: string | null,
+  targetIndex: number,
+) {
+  const movingScene = snapshot.scenes.find((scene) => scene.id === sceneId);
+  if (!movingScene) {
+    throw new Error(`Scene ${sceneId} not found.`);
+  }
+
+  const targetScenes = snapshot.scenes
+    .filter(
+      (scene) =>
+        (scene.chapterId ?? null) === targetChapterId && scene.id !== sceneId,
+    )
+    .sort((left, right) => left.orderIndex - right.orderIndex);
+  const clampedTargetIndex = Math.max(
+    0,
+    Math.min(targetIndex, targetScenes.length),
+  );
+  const reorderedScenes = [...targetScenes];
+
+  reorderedScenes.splice(clampedTargetIndex, 0, {
+    ...movingScene,
+    chapterId: targetChapterId,
+  });
+
+  const updatedScenesById = new Map(
+    reorderedScenes.map((scene, index) => [
+      scene.id,
+      {
+        ...scene,
+        orderIndex: index,
+        updatedAt: "2026-03-31T12:00:00.000Z",
+      },
+    ]),
+  );
+
+  return {
+    ...snapshot,
+    scenes: snapshot.scenes.map((scene) =>
+      scene.id === sceneId || (scene.chapterId ?? null) === targetChapterId
+        ? (updatedScenesById.get(scene.id) ?? scene)
+        : scene,
+    ),
+  };
 }
 
 describe("Chapter workspace", () => {
@@ -125,6 +175,17 @@ describe("Chapter workspace", () => {
       return savedScene;
     });
 
+    tauriApiMock.moveScene.mockImplementation(async (input) => {
+      currentSnapshot = moveSceneWithinChapterSnapshot(
+        currentSnapshot,
+        input.sceneId,
+        input.targetChapterId ?? null,
+        input.targetIndex,
+      );
+
+      return currentSnapshot.scenes.find((scene) => scene.id === input.sceneId)!;
+    });
+
     vi.stubGlobal("Worker", MockWorker);
     window.history.pushState({}, "", "/chapters/chapter-1");
     useUiStore.getState().resetUi();
@@ -183,6 +244,41 @@ describe("Chapter workspace", () => {
     queryClient.clear();
   });
 
+  it("reorders chapter scenes inline through the backend move command", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /move dock nine exchange later/i }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-1",
+      targetIndex: 2,
+    });
+
+    await waitFor(() => {
+      const firstScene = screen.getByText("The Crate Speaks");
+      const secondScene = screen.getByText("Dock Nine Exchange");
+      expect(
+        firstScene.compareDocumentPosition(secondScene) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("keeps unsaved chapter edits in place when adding a scene refreshes the snapshot", async () => {
     const { unmount, queryClient } = renderRouter();
 
@@ -226,6 +322,45 @@ describe("Chapter workspace", () => {
     ).toBe(
       "Ava commits to the mission while the chapter tightens around that choice.",
     );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved chapter edits in place when reordering a scene refreshes the snapshot", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    const summaryPlaceholder = "Summarize the chapter's visible movement.";
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(summaryPlaceholder)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(summaryPlaceholder), {
+      target: {
+        value: "Ava reframes the whole chapter before the scenes shift under her.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", { name: /move dock nine exchange later/i }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      const firstScene = screen.getByText("The Crate Speaks");
+      const secondScene = screen.getByText("Dock Nine Exchange");
+      expect(
+        firstScene.compareDocumentPosition(secondScene) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+    });
+
+    expect(
+      (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
+    ).toBe("Ava reframes the whole chapter before the scenes shift under her.");
 
     unmount();
     queryClient.clear();

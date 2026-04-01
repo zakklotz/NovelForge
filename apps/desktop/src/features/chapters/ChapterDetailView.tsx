@@ -3,7 +3,9 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import type { Chapter, StructuredAiResponse } from "@novelforge/domain";
 import {
   AlertTriangle,
+  ArrowDown,
   ArrowLeft,
+  ArrowUp,
   CheckSquare,
   FileText,
   ListOrdered,
@@ -252,7 +254,7 @@ export function ChapterDetailView() {
   const snapshotQuery = useProjectSnapshot();
   const appSettingsQuery = useAppSettings();
   const { runStructuredAiAction } = useAiRuntime();
-  const { saveChapter, saveScene } = useProjectRuntime();
+  const { moveScene, saveChapter, saveScene } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
@@ -279,6 +281,8 @@ export function ChapterDetailView() {
   const [isApplyingSceneProposals, setIsApplyingSceneProposals] = useState(false);
   const [sceneProposalError, setSceneProposalError] = useState<string | null>(null);
   const [sceneProposalMessage, setSceneProposalMessage] = useState<string | null>(null);
+  const [movingSceneId, setMovingSceneId] = useState<string | null>(null);
+  const [sceneMoveError, setSceneMoveError] = useState<string | null>(null);
 
   useEffect(() => {
     planningRef.current = planning;
@@ -486,6 +490,42 @@ export function ChapterDetailView() {
         title: `Scene ${chapterScenes.length + 1}`,
       }),
     );
+  }
+
+  async function handleMoveScene(sceneId: string, direction: -1 | 1) {
+    const currentIndex = chapterScenes.findIndex((scene) => scene.id === sceneId);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const desiredIndex = currentIndex + direction;
+    if (desiredIndex < 0 || desiredIndex >= chapterScenes.length) {
+      return;
+    }
+
+    // Same-chapter downward moves are modeled as insert-after positions in the backend.
+    const targetIndex =
+      desiredIndex > currentIndex ? desiredIndex + 1 : desiredIndex;
+
+    setSceneMoveError(null);
+    setMovingSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId: currentChapter.id,
+        targetIndex,
+      });
+    } catch (error) {
+      setSceneMoveError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not reorder this scene right now.",
+      );
+    } finally {
+      setMovingSceneId(null);
+    }
   }
 
   async function handleProposeScenes() {
@@ -818,6 +858,12 @@ export function ChapterDetailView() {
           </Panel>
         ) : null}
 
+        {sceneMoveError ? (
+          <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+            <p className="text-sm text-[var(--danger)]">{sceneMoveError}</p>
+          </Panel>
+        ) : null}
+
         {sceneProposalResponse ? (
           <Panel className="mt-6 bg-white/75 shadow-none">
             <SectionHeading
@@ -1001,21 +1047,16 @@ export function ChapterDetailView() {
         <div className="mt-6 flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 text-sm font-medium text-[var(--ink-muted)]">
             <ListOrdered className="size-4" />
-            Scene order comes from the chapter's saved story structure.
+            Scene order comes from the chapter's saved story structure. Move scenes
+            earlier or later here without leaving the chapter workspace.
           </div>
 
           <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1">
             {chapterScenes.length > 0 ? (
               chapterScenes.map((scene, index) => (
-                <button
+                <article
                   key={scene.id}
-                  className="rounded-3xl border border-black/8 bg-white/78 p-5 text-left transition hover:border-[color:rgba(184,88,63,0.34)] hover:bg-white"
-                  onClick={() =>
-                    void navigate({
-                      to: "/scenes/$sceneId",
-                      params: { sceneId: scene.id },
-                    })
-                  }
+                  className="rounded-3xl border border-black/8 bg-white/78 p-5 transition hover:border-[color:rgba(184,88,63,0.34)] hover:bg-white"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -1029,9 +1070,46 @@ export function ChapterDetailView() {
                         {scene.summary || "No scene summary yet."}
                       </p>
                     </div>
-                    <div className="flex shrink-0 items-center gap-2 text-sm text-[var(--ink-faint)]">
-                      <FileText className="size-4" />
-                      Open
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="px-3"
+                        onClick={() => void handleMoveScene(scene.id, -1)}
+                        disabled={index === 0 || Boolean(movingSceneId)}
+                        aria-label={`Move ${scene.title} earlier`}
+                      >
+                        <ArrowUp className="size-4" />
+                        Earlier
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="px-3"
+                        onClick={() => void handleMoveScene(scene.id, 1)}
+                        disabled={
+                          index === chapterScenes.length - 1 || Boolean(movingSceneId)
+                        }
+                        aria-label={`Move ${scene.title} later`}
+                      >
+                        <ArrowDown className="size-4" />
+                        Later
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        className="px-3"
+                        onClick={() =>
+                          void navigate({
+                            to: "/scenes/$sceneId",
+                            params: { sceneId: scene.id },
+                          })
+                        }
+                        aria-label={`Open ${scene.title}`}
+                      >
+                        <FileText className="size-4" />
+                        Open
+                      </Button>
                     </div>
                   </div>
 
@@ -1063,7 +1141,12 @@ export function ChapterDetailView() {
                       <Badge>{scene.dependencySceneIds.length} dependency link{scene.dependencySceneIds.length === 1 ? "" : "s"}</Badge>
                     ) : null}
                   </div>
-                </button>
+                  {movingSceneId === scene.id ? (
+                    <p className="mt-4 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]">
+                      Updating order...
+                    </p>
+                  ) : null}
+                </article>
               ))
             ) : (
               <EmptyState
