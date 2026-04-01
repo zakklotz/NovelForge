@@ -40,6 +40,7 @@ import type {
 } from "@novelforge/domain";
 
 type SceneWorkspaceTab = "overview" | "beats" | "draft";
+type SceneReviewInsertPosition = "start" | "end" | "before" | "after";
 
 interface ScenePlanningState {
   title: string;
@@ -292,6 +293,10 @@ function appendBeatOutline(current: string, incoming: string) {
   return `${currentOutline}\n${incomingOutline}`;
 }
 
+function prependBeatOutline(current: string, incoming: string) {
+  return appendBeatOutline(incoming, current);
+}
+
 function appendDraftHtml(current: string, incoming: string) {
   const currentHtml = current.trim() || "<p></p>";
   const incomingHtml = incoming.trim() || "<p></p>";
@@ -307,10 +312,24 @@ function appendDraftHtml(current: string, incoming: string) {
   return `${currentHtml}<p></p>${incomingHtml}`;
 }
 
+function prependDraftHtml(current: string, incoming: string) {
+  return appendDraftHtml(incoming, current);
+}
+
 interface DraftReviewBlock {
   html: string;
   text: string;
 }
+
+interface SceneReviewInsertState {
+  position: SceneReviewInsertPosition;
+  anchorIndex: number;
+}
+
+const defaultSceneReviewInsertState: SceneReviewInsertState = {
+  position: "end",
+  anchorIndex: 0,
+};
 
 function escapeHtml(value: string) {
   return value
@@ -326,6 +345,95 @@ function buildSelectedBeatOutline(lines: string[], selectedIndexes: number[]) {
     .filter((_, index) => selectedIndexSet.has(index))
     .join("\n")
     .trim();
+}
+
+function normalizeSceneReviewInsertState(
+  insertState: SceneReviewInsertState,
+  currentItemCount: number,
+): SceneReviewInsertState {
+  const position =
+    currentItemCount === 0 &&
+    (insertState.position === "before" || insertState.position === "after")
+      ? "end"
+      : insertState.position;
+  const maxAnchorIndex = Math.max(currentItemCount - 1, 0);
+
+  return {
+    position,
+    anchorIndex: Math.min(Math.max(insertState.anchorIndex, 0), maxAnchorIndex),
+  };
+}
+
+function insertItemsAtPosition<Item>(
+  currentItems: Item[],
+  incomingItems: Item[],
+  insertState: SceneReviewInsertState,
+) {
+  if (incomingItems.length === 0) {
+    return currentItems;
+  }
+
+  if (currentItems.length === 0) {
+    return incomingItems;
+  }
+
+  const normalizedInsertState = normalizeSceneReviewInsertState(
+    insertState,
+    currentItems.length,
+  );
+
+  switch (normalizedInsertState.position) {
+    case "start":
+      return [...incomingItems, ...currentItems];
+    case "end":
+      return [...currentItems, ...incomingItems];
+    case "before": {
+      const nextItems = [...currentItems];
+      nextItems.splice(normalizedInsertState.anchorIndex, 0, ...incomingItems);
+      return nextItems;
+    }
+    case "after": {
+      const nextItems = [...currentItems];
+      nextItems.splice(normalizedInsertState.anchorIndex + 1, 0, ...incomingItems);
+      return nextItems;
+    }
+  }
+}
+
+function insertBeatOutline(
+  current: string,
+  incoming: string,
+  insertState: SceneReviewInsertState,
+) {
+  const currentLines = splitLines(current);
+  const incomingLines = splitLines(incoming);
+
+  if (incomingLines.length === 0) {
+    return current.trim();
+  }
+
+  if (currentLines.length === 0) {
+    return incomingLines.join("\n");
+  }
+
+  const normalizedInsertState = normalizeSceneReviewInsertState(
+    insertState,
+    currentLines.length,
+  );
+
+  switch (normalizedInsertState.position) {
+    case "start":
+      return prependBeatOutline(current, incoming);
+    case "end":
+      return appendBeatOutline(current, incoming);
+    case "before":
+    case "after":
+      return insertItemsAtPosition(
+        currentLines,
+        incomingLines,
+        normalizedInsertState,
+      ).join("\n");
+  }
 }
 
 function getDraftReviewBlocks(value: string): DraftReviewBlock[] {
@@ -384,6 +492,63 @@ function buildSelectedDraftHtml(
     .join("");
 }
 
+function buildDraftHtmlFromBlocks(blocks: DraftReviewBlock[]) {
+  return blocks.map((block) => block.html).join("");
+}
+
+function insertDraftHtml(
+  current: string,
+  incoming: string,
+  insertState: SceneReviewInsertState,
+) {
+  const currentHtml = current.trim() || "<p></p>";
+  const incomingHtml = incoming.trim() || "<p></p>";
+
+  if (isBlankHtml(incomingHtml)) {
+    return currentHtml;
+  }
+
+  if (isBlankHtml(currentHtml)) {
+    return incomingHtml;
+  }
+
+  const currentBlocks = getDraftReviewBlocks(currentHtml);
+  const normalizedInsertState = normalizeSceneReviewInsertState(
+    insertState,
+    currentBlocks.length,
+  );
+
+  switch (normalizedInsertState.position) {
+    case "start":
+      return prependDraftHtml(currentHtml, incomingHtml);
+    case "end":
+      return appendDraftHtml(currentHtml, incomingHtml);
+    case "before":
+    case "after": {
+      const insertedBlocks = insertItemsAtPosition(
+        currentBlocks,
+        getDraftReviewBlocks(incomingHtml),
+        normalizedInsertState,
+      );
+      return buildDraftHtmlFromBlocks(insertedBlocks) || "<p></p>";
+    }
+  }
+}
+
+function buildInsertAnchorLabel(
+  itemLabel: "Beat" | "Block",
+  index: number,
+  text: string,
+) {
+  const normalizedText = text.replace(/\s+/g, " ").trim();
+  const preview =
+    normalizedText.length > 72
+      ? `${normalizedText.slice(0, 69).trimEnd()}...`
+      : normalizedText;
+
+  return `${itemLabel} ${index + 1}: ${preview}`;
+}
+
 export function SceneWorkspaceView() {
   const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
@@ -416,9 +581,15 @@ export function SceneWorkspaceView() {
   const [beatReview, setBeatReview] = useState<StructuredAiResponse | null>(null);
   const [draftReview, setDraftReview] = useState<StructuredAiResponse | null>(null);
   const [selectedBeatIndexes, setSelectedBeatIndexes] = useState<number[]>([]);
+  const [beatInsertState, setBeatInsertState] = useState<SceneReviewInsertState>({
+    ...defaultSceneReviewInsertState,
+  });
   const [selectedDraftBlockIndexes, setSelectedDraftBlockIndexes] = useState<
     number[]
   >([]);
+  const [draftInsertState, setDraftInsertState] = useState<SceneReviewInsertState>({
+    ...defaultSceneReviewInsertState,
+  });
   const [sceneAiError, setSceneAiError] = useState<string | null>(null);
   const [isGeneratingBeats, setIsGeneratingBeats] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
@@ -466,7 +637,9 @@ export function SceneWorkspaceView() {
     setBeatReview(null);
     setDraftReview(null);
     setSelectedBeatIndexes([]);
+    setBeatInsertState(defaultSceneReviewInsertState);
     setSelectedDraftBlockIndexes([]);
+    setDraftInsertState(defaultSceneReviewInsertState);
     setSceneAiError(null);
   }, [scene?.id]);
 
@@ -776,12 +949,29 @@ export function SceneWorkspaceView() {
       defaultModelId.trim().length > 0
     : false;
   const currentBeatLines = splitLines(planning.beatOutline);
+  const normalizedBeatInsertState = normalizeSceneReviewInsertState(
+    beatInsertState,
+    currentBeatLines.length,
+  );
+  const shouldChooseBeatInsertAnchor =
+    currentBeatLines.length > 0 &&
+    (normalizedBeatInsertState.position === "before" ||
+      normalizedBeatInsertState.position === "after");
   const proposedBeatLines = splitLines(beatReview?.result.beatOutline ?? "");
   const selectedBeatOutline = buildSelectedBeatOutline(
     proposedBeatLines,
     selectedBeatIndexes,
   );
   const selectedBeatCount = splitLines(selectedBeatOutline).length;
+  const currentDraftBlocks = getDraftReviewBlocks(draft);
+  const normalizedDraftInsertState = normalizeSceneReviewInsertState(
+    draftInsertState,
+    currentDraftBlocks.length,
+  );
+  const shouldChooseDraftInsertAnchor =
+    currentDraftBlocks.length > 0 &&
+    (normalizedDraftInsertState.position === "before" ||
+      normalizedDraftInsertState.position === "after");
   const proposedDraftBlocks = getDraftReviewBlocks(
     draftReview?.result.manuscriptText ?? "",
   );
@@ -794,11 +984,8 @@ export function SceneWorkspaceView() {
   const selectedDraftText = getHtmlTextContent(selectedDraftHtml);
   const currentDraftWordCount = countWords(currentDraftText);
   const selectedDraftWordCount = countWords(selectedDraftText);
-  const canAppendBeats =
-    Boolean(selectedBeatOutline) &&
-    planning.beatOutline.trim().length > 0;
-  const canAppendDraft =
-    !isBlankHtml(selectedDraftHtml) && !isBlankHtml(draft);
+  const canInsertBeats = Boolean(selectedBeatOutline);
+  const canInsertDraft = !isBlankHtml(selectedDraftHtml);
 
   async function handleSaveMetadata() {
     if (!planningDirty) {
@@ -850,6 +1037,7 @@ export function SceneWorkspaceView() {
       setSelectedBeatIndexes(
         splitLines(response.result.beatOutline).map((_, index) => index),
       );
+      setBeatInsertState(defaultSceneReviewInsertState);
       setWorkspaceTab("beats");
     } catch (error) {
       setSceneAiError(
@@ -865,9 +1053,10 @@ export function SceneWorkspaceView() {
   function handleCancelBeatReview() {
     setBeatReview(null);
     setSelectedBeatIndexes([]);
+    setBeatInsertState(defaultSceneReviewInsertState);
   }
 
-  function handleApplyBeatOutline(mode: "replace" | "append" = "replace") {
+  function handleApplyBeatOutline(mode: "replace" | "insert" = "replace") {
     const nextBeatOutline = selectedBeatOutline;
     if (!nextBeatOutline) {
       return;
@@ -875,12 +1064,17 @@ export function SceneWorkspaceView() {
 
     updatePlanningField(
       "beatOutline",
-      mode === "append"
-        ? appendBeatOutline(planning.beatOutline, nextBeatOutline)
+      mode === "insert"
+        ? insertBeatOutline(
+            planning.beatOutline,
+            nextBeatOutline,
+            normalizedBeatInsertState,
+          )
         : nextBeatOutline,
     );
     setBeatReview(null);
     setSelectedBeatIndexes([]);
+    setBeatInsertState(defaultSceneReviewInsertState);
     setWorkspaceTab("beats");
   }
 
@@ -926,6 +1120,7 @@ export function SceneWorkspaceView() {
       setSelectedDraftBlockIndexes(
         getDraftReviewBlocks(response.result.manuscriptText).map((_, index) => index),
       );
+      setDraftInsertState(defaultSceneReviewInsertState);
       setWorkspaceTab("draft");
     } catch (error) {
       setSceneAiError(
@@ -941,18 +1136,22 @@ export function SceneWorkspaceView() {
   function handleCancelDraftReview() {
     setDraftReview(null);
     setSelectedDraftBlockIndexes([]);
+    setDraftInsertState(defaultSceneReviewInsertState);
   }
 
-  function handleApplyDraft(mode: "replace" | "append" = "replace") {
+  function handleApplyDraft(mode: "replace" | "insert" = "replace") {
     const generatedDraft = selectedDraftHtml || "<p></p>";
     const nextDraft =
-      mode === "append" ? appendDraftHtml(draft, generatedDraft) : generatedDraft;
+      mode === "insert"
+        ? insertDraftHtml(draft, generatedDraft, normalizedDraftInsertState)
+        : generatedDraft;
     setDraft(nextDraft);
     if (editor && editor.getHTML() !== nextDraft) {
       editor.commands.setContent(nextDraft, false);
     }
     setDraftReview(null);
     setSelectedDraftBlockIndexes([]);
+    setDraftInsertState(defaultSceneReviewInsertState);
     setWorkspaceTab("draft");
   }
 
@@ -1271,18 +1470,9 @@ export function SceneWorkspaceView() {
                       <Button variant="ghost" onClick={handleCancelBeatReview}>
                         Cancel
                       </Button>
-                      {canAppendBeats ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => handleApplyBeatOutline("append")}
-                          disabled={!selectedBeatOutline}
-                        >
-                          Append Selected Beats
-                        </Button>
-                      ) : null}
                       <Button
                         onClick={() => handleApplyBeatOutline("replace")}
-                        disabled={!selectedBeatOutline}
+                        disabled={!canInsertBeats}
                       >
                         <CheckSquare className="size-4" />
                         Replace With Selected Beats
@@ -1293,7 +1483,72 @@ export function SceneWorkspaceView() {
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
                   Current beats stay untouched while you review. Choose the beats you
-                  want, then append or replace using only the checked lines.
+                  want, then insert them where they belong or replace using only the
+                  checked lines.
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
+                    <Field label="Insert Position">
+                      <Select
+                        value={normalizedBeatInsertState.position}
+                        onChange={(event) =>
+                          setBeatInsertState((currentState) => ({
+                            ...currentState,
+                            position: event.target.value as SceneReviewInsertPosition,
+                          }))
+                        }
+                      >
+                        <option value="start">At outline beginning</option>
+                        <option value="end">At outline end</option>
+                        {currentBeatLines.length > 0 ? (
+                          <>
+                            <option value="before">Before selected beat</option>
+                            <option value="after">After selected beat</option>
+                          </>
+                        ) : null}
+                      </Select>
+                    </Field>
+
+                    {shouldChooseBeatInsertAnchor ? (
+                      <Field
+                        label={
+                          normalizedBeatInsertState.position === "before"
+                            ? "Before Beat"
+                            : "After Beat"
+                        }
+                      >
+                        <Select
+                          value={String(normalizedBeatInsertState.anchorIndex)}
+                          onChange={(event) =>
+                            setBeatInsertState((currentState) => ({
+                              ...currentState,
+                              anchorIndex: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {currentBeatLines.map((beat, index) => (
+                            <option key={`${index}-${beat}`} value={index}>
+                              {buildInsertAnchorLabel("Beat", index, beat)}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    ) : null}
+
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleApplyBeatOutline("insert")}
+                      disabled={!canInsertBeats}
+                    >
+                      Insert Selected Beats
+                    </Button>
+                  </div>
+
+                  <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                    Insert the checked beats into the current outline at the chosen
+                    position without replacing the rest.
+                  </p>
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -1419,18 +1674,9 @@ export function SceneWorkspaceView() {
                       <Button variant="ghost" onClick={handleCancelDraftReview}>
                         Cancel
                       </Button>
-                      {canAppendDraft ? (
-                        <Button
-                          variant="secondary"
-                          onClick={() => handleApplyDraft("append")}
-                          disabled={isBlankHtml(selectedDraftHtml)}
-                        >
-                          Append Selected Draft
-                        </Button>
-                      ) : null}
                       <Button
                         onClick={() => handleApplyDraft("replace")}
-                        disabled={isBlankHtml(selectedDraftHtml)}
+                        disabled={!canInsertDraft}
                       >
                         <CheckSquare className="size-4" />
                         Replace With Selected Draft
@@ -1441,7 +1687,72 @@ export function SceneWorkspaceView() {
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
                   Current draft prose stays untouched while you review. Choose the
-                  blocks you want, then append or replace using only the checked prose.
+                  blocks you want, then insert them where they belong or replace
+                  using only the checked prose.
+                </div>
+
+                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
+                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
+                    <Field label="Insert Position">
+                      <Select
+                        value={normalizedDraftInsertState.position}
+                        onChange={(event) =>
+                          setDraftInsertState((currentState) => ({
+                            ...currentState,
+                            position: event.target.value as SceneReviewInsertPosition,
+                          }))
+                        }
+                      >
+                        <option value="start">At draft beginning</option>
+                        <option value="end">At draft end</option>
+                        {currentDraftBlocks.length > 0 ? (
+                          <>
+                            <option value="before">Before selected block</option>
+                            <option value="after">After selected block</option>
+                          </>
+                        ) : null}
+                      </Select>
+                    </Field>
+
+                    {shouldChooseDraftInsertAnchor ? (
+                      <Field
+                        label={
+                          normalizedDraftInsertState.position === "before"
+                            ? "Before Block"
+                            : "After Block"
+                        }
+                      >
+                        <Select
+                          value={String(normalizedDraftInsertState.anchorIndex)}
+                          onChange={(event) =>
+                            setDraftInsertState((currentState) => ({
+                              ...currentState,
+                              anchorIndex: Number(event.target.value),
+                            }))
+                          }
+                        >
+                          {currentDraftBlocks.map((block, index) => (
+                            <option key={`${index}-${block.text}`} value={index}>
+                              {buildInsertAnchorLabel("Block", index, block.text)}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                    ) : null}
+
+                    <Button
+                      variant="secondary"
+                      onClick={() => handleApplyDraft("insert")}
+                      disabled={!canInsertDraft}
+                    >
+                      Insert Selected Draft
+                    </Button>
+                  </div>
+
+                  <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                    Insert the checked prose blocks into the current draft at the
+                    chosen position without replacing the rest.
+                  </p>
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
