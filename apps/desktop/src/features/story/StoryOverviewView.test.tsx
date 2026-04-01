@@ -106,6 +106,93 @@ function reorderChaptersInSnapshot(
   };
 }
 
+function createStoryDiagnosticResponse() {
+  return {
+    providerId: "gemini",
+    modelId: "gemini-2.5-flash",
+    action: "story-diagnose-structure" as const,
+    assistantMessage: "Reviewed the full story spine for planning gaps.",
+    result: {
+      summary: "Chapter 2 looks underdefined and the transition into the checkpoint is thin.",
+      sceneProposals: [],
+      beatOutline: "",
+      manuscriptText: "",
+      storyStructureDiagnostic: {
+        underdefinedChapters: [
+          {
+            title: "Chapter 2 needs a clearer chapter-level turn",
+            detail:
+              "The pressure is present, but the chapter outcome still reads as a temporary obstacle instead of a structural shift.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-3",
+                title: "Checkpoint Lanterns",
+              },
+            ],
+          },
+        ],
+        redundantFunctions: [
+          {
+            title: "Opening scenes may overlap in revelation function",
+            detail:
+              "Both scenes in Chapter 1 center on Ava discovering the package is more dangerous than expected.",
+            focus: {
+              kind: "scene",
+              id: "scene-1",
+              title: "Dock Nine Exchange",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-2",
+                title: "The Crate Speaks",
+              },
+            ],
+          },
+        ],
+        missingTransitions: [
+          {
+            title: "Bridge the private revelation into the border pressure",
+            detail:
+              "A short consequence or prep beat may help carry the emotional handoff into Chapter 2.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-2",
+                title: "The Crate Speaks",
+              },
+            ],
+          },
+        ],
+        nextPlanningTargets: [
+          {
+            title: "Clarify what Chapter 2 permanently changes",
+            detail:
+              "Define the irreversible turn before adding more scene material around the checkpoint.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [],
+          },
+        ],
+      },
+    },
+  };
+}
+
 describe("StoryOverviewView", () => {
   let currentSnapshot = structuredClone(sampleProjectSnapshot);
 
@@ -289,90 +376,7 @@ describe("StoryOverviewView", () => {
   });
 
   it("runs a story-level structure diagnostic review from the spine", async () => {
-    tauriApiMock.runStructuredAiAction.mockResolvedValue({
-      providerId: "gemini",
-      modelId: "gemini-2.5-flash",
-      action: "story-diagnose-structure",
-      assistantMessage: "Reviewed the full story spine for planning gaps.",
-      result: {
-        summary: "Chapter 2 looks underdefined and the transition into the checkpoint is thin.",
-        sceneProposals: [],
-        beatOutline: "",
-        manuscriptText: "",
-        storyStructureDiagnostic: {
-          underdefinedChapters: [
-            {
-              title: "Chapter 2 needs a clearer chapter-level turn",
-              detail:
-                "The pressure is present, but the chapter outcome still reads as a temporary obstacle instead of a structural shift.",
-              focus: {
-                kind: "chapter",
-                id: "chapter-2",
-                title: "Chapter 2: Border Sparks",
-              },
-              related: [
-                {
-                  kind: "scene",
-                  id: "scene-3",
-                  title: "Checkpoint Lanterns",
-                },
-              ],
-            },
-          ],
-          redundantFunctions: [
-            {
-              title: "Opening scenes may overlap in revelation function",
-              detail:
-                "Both scenes in Chapter 1 center on Ava discovering the package is more dangerous than expected.",
-              focus: {
-                kind: "scene",
-                id: "scene-1",
-                title: "Dock Nine Exchange",
-              },
-              related: [
-                {
-                  kind: "scene",
-                  id: "scene-2",
-                  title: "The Crate Speaks",
-                },
-              ],
-            },
-          ],
-          missingTransitions: [
-            {
-              title: "Bridge the private revelation into the border pressure",
-              detail:
-                "A short consequence or prep beat may help carry the emotional handoff into Chapter 2.",
-              focus: {
-                kind: "chapter",
-                id: "chapter-2",
-                title: "Chapter 2: Border Sparks",
-              },
-              related: [
-                {
-                  kind: "scene",
-                  id: "scene-2",
-                  title: "The Crate Speaks",
-                },
-              ],
-            },
-          ],
-          nextPlanningTargets: [
-            {
-              title: "Clarify what Chapter 2 permanently changes",
-              detail:
-                "Define the irreversible turn before adding more scene material around the checkpoint.",
-              focus: {
-                kind: "chapter",
-                id: "chapter-2",
-                title: "Chapter 2: Border Sparks",
-              },
-              related: [],
-            },
-          ],
-        },
-      },
-    });
+    tauriApiMock.runStructuredAiAction.mockResolvedValue(createStoryDiagnosticResponse());
 
     const { queryClient, unmount } = renderRouter();
 
@@ -402,8 +406,80 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Missing Transitions")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
     expect(screen.getByText("Chapter 2 needs a clearer chapter-level turn")).toBeTruthy();
-    expect(screen.getAllByText("Chapter 2: Border Sparks").length).toBeGreaterThan(0);
-    expect(screen.getByText("Chapter 2 · Scene 1: Checkpoint Lanterns")).toBeTruthy();
+    expect(
+      screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" }).length,
+    ).toBeGreaterThan(0);
+    expect(
+      screen.getByRole("button", { name: "Chapter 2 · Scene 1: Checkpoint Lanterns" }),
+    ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("opens the chapter workspace from a diagnostic jump action", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue(createStoryDiagnosticResponse());
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze Story Structure",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Structure Review")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" })[0]);
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/chapters/chapter-2");
+    });
+
+    expect(screen.getByText("Scene Plan")).toBeTruthy();
+    expect(useUiStore.getState().selectedChapterId).toBe("chapter-2");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("opens the scene workspace from a diagnostic jump action", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue(createStoryDiagnosticResponse());
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze Story Structure",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Structure Review")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Chapter 2 · Scene 1: Checkpoint Lanterns",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(window.location.pathname).toBe("/scenes/scene-3");
+    });
+
+    expect(screen.getByText("Scene Frame")).toBeTruthy();
+    expect(useUiStore.getState().selectedChapterId).toBe("chapter-2");
 
     unmount();
     queryClient.clear();

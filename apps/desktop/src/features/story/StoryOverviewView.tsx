@@ -36,6 +36,14 @@ interface ChapterDiagnosticSummary {
   notes: string[];
 }
 
+interface StoryReferenceJumpTarget {
+  key: string;
+  kind: "chapter" | "scene";
+  id: string;
+  chapterId: string | null;
+  label: string;
+}
+
 function buildOrderedChapters(snapshot: ProjectSnapshot) {
   return [...snapshot.chapters].sort((left, right) => left.orderIndex - right.orderIndex);
 }
@@ -257,7 +265,10 @@ function buildStoryReferenceLabel(
   if (reference.kind === "chapter") {
     const chapter = chapterById.get(reference.id);
     if (chapter) {
-      return `Chapter ${chapter.orderIndex + 1}: ${chapter.title}`;
+      const chapterPrefix = `chapter ${chapter.orderIndex + 1}`;
+      return chapter.title.trim().toLowerCase().startsWith(chapterPrefix)
+        ? chapter.title
+        : `Chapter ${chapter.orderIndex + 1}: ${chapter.title}`;
     }
   }
 
@@ -273,6 +284,57 @@ function buildStoryReferenceLabel(
   }
 
   return reference.title?.trim() || reference.id;
+}
+
+function buildStoryReferenceJumpTargets(
+  references: DomainObjectRef[],
+  chapterById: Map<string, Chapter>,
+  sceneById: Map<string, Scene>,
+) {
+  const seen = new Set<string>();
+  const jumpTargets: StoryReferenceJumpTarget[] = [];
+
+  references.forEach((reference) => {
+    const key = `${reference.kind}:${reference.id}`;
+    if (seen.has(key)) {
+      return;
+    }
+
+    if (reference.kind === "chapter") {
+      const chapter = chapterById.get(reference.id);
+      if (!chapter) {
+        return;
+      }
+
+      seen.add(key);
+      jumpTargets.push({
+        key,
+        kind: "chapter",
+        id: chapter.id,
+        chapterId: chapter.id,
+        label: buildStoryReferenceLabel(reference, chapterById, sceneById),
+      });
+      return;
+    }
+
+    if (reference.kind === "scene") {
+      const scene = sceneById.get(reference.id);
+      if (!scene) {
+        return;
+      }
+
+      seen.add(key);
+      jumpTargets.push({
+        key,
+        kind: "scene",
+        id: scene.id,
+        chapterId: scene.chapterId,
+        label: buildStoryReferenceLabel(reference, chapterById, sceneById),
+      });
+    }
+  });
+
+  return jumpTargets;
 }
 
 export function StoryOverviewView() {
@@ -436,6 +498,23 @@ export function StoryOverviewView() {
     } finally {
       setIsAnalyzingStory(false);
     }
+  }
+
+  async function handleOpenDiagnosticJumpTarget(target: StoryReferenceJumpTarget) {
+    setSelectedChapterId(target.chapterId);
+
+    if (target.kind === "chapter") {
+      await navigate({
+        to: "/chapters/$chapterId",
+        params: { chapterId: target.id },
+      });
+      return;
+    }
+
+    await navigate({
+      to: "/scenes/$sceneId",
+      params: { sceneId: target.id },
+    });
   }
 
   return (
@@ -616,6 +695,14 @@ export function StoryOverviewView() {
                             reference.kind !== entry.focus.kind ||
                             reference.id !== entry.focus.id,
                         );
+                        const jumpTargets = buildStoryReferenceJumpTargets(
+                          [
+                            ...(entry.focus ? [entry.focus] : []),
+                            ...relatedReferences,
+                          ],
+                          chapterById,
+                          sceneById,
+                        );
 
                         return (
                           <div
@@ -630,7 +717,29 @@ export function StoryOverviewView() {
                                 "Review this area in the existing chapter and scene workspaces."}
                             </p>
 
-                            {entry.focus || relatedReferences.length > 0 ? (
+                            {jumpTargets.length > 0 ? (
+                              <div className="mt-4">
+                                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                                  Jump To
+                                </p>
+                                <div className="mt-2 flex flex-wrap gap-2">
+                                  {jumpTargets.map((target) => (
+                                    <Button
+                                      key={target.key}
+                                      type="button"
+                                      variant="secondary"
+                                      className="justify-start px-3 py-2 text-left"
+                                      onClick={() =>
+                                        void handleOpenDiagnosticJumpTarget(target)
+                                      }
+                                    >
+                                      <ChevronRight className="size-4 shrink-0" />
+                                      {target.label}
+                                    </Button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : entry.focus || relatedReferences.length > 0 ? (
                               <div className="mt-3 flex flex-wrap gap-2">
                                 {entry.focus ? (
                                   <Badge tone={section.tone}>
