@@ -307,6 +307,83 @@ function appendDraftHtml(current: string, incoming: string) {
   return `${currentHtml}<p></p>${incomingHtml}`;
 }
 
+interface DraftReviewBlock {
+  html: string;
+  text: string;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+function buildSelectedBeatOutline(lines: string[], selectedIndexes: number[]) {
+  const selectedIndexSet = new Set(selectedIndexes);
+
+  return lines
+    .filter((_, index) => selectedIndexSet.has(index))
+    .join("\n")
+    .trim();
+}
+
+function getDraftReviewBlocks(value: string): DraftReviewBlock[] {
+  const normalized = value.trim();
+  if (!normalized) {
+    return [];
+  }
+
+  if (typeof DOMParser === "undefined") {
+    const text = getHtmlTextContent(normalized);
+    return text ? [{ html: normalized, text }] : [];
+  }
+
+  const body = new DOMParser().parseFromString(normalized, "text/html").body;
+  const blocks = Array.from(body.childNodes)
+    .map((node) => {
+      if (node.nodeType === 3) {
+        const text = node.textContent?.replace(/\s+/g, " ").trim() ?? "";
+        return text
+          ? {
+              html: `<p>${escapeHtml(text)}</p>`,
+              text,
+            }
+          : null;
+      }
+
+      if (node.nodeType !== 1) {
+        return null;
+      }
+
+      const element = node as HTMLElement;
+      const html = element.outerHTML;
+      const text = getHtmlTextContent(html);
+
+      return text ? { html, text } : null;
+    })
+    .filter((block): block is DraftReviewBlock => Boolean(block));
+
+  if (blocks.length > 0) {
+    return blocks;
+  }
+
+  const text = getHtmlTextContent(normalized);
+  return text ? [{ html: normalized, text }] : [];
+}
+
+function buildSelectedDraftHtml(
+  blocks: DraftReviewBlock[],
+  selectedIndexes: number[],
+) {
+  const selectedIndexSet = new Set(selectedIndexes);
+
+  return blocks
+    .filter((_, index) => selectedIndexSet.has(index))
+    .map((block) => block.html)
+    .join("");
+}
+
 export function SceneWorkspaceView() {
   const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
@@ -338,6 +415,10 @@ export function SceneWorkspaceView() {
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const [beatReview, setBeatReview] = useState<StructuredAiResponse | null>(null);
   const [draftReview, setDraftReview] = useState<StructuredAiResponse | null>(null);
+  const [selectedBeatIndexes, setSelectedBeatIndexes] = useState<number[]>([]);
+  const [selectedDraftBlockIndexes, setSelectedDraftBlockIndexes] = useState<
+    number[]
+  >([]);
   const [sceneAiError, setSceneAiError] = useState<string | null>(null);
   const [isGeneratingBeats, setIsGeneratingBeats] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
@@ -384,6 +465,8 @@ export function SceneWorkspaceView() {
     setIsSavingWorkspace(false);
     setBeatReview(null);
     setDraftReview(null);
+    setSelectedBeatIndexes([]);
+    setSelectedDraftBlockIndexes([]);
     setSceneAiError(null);
   }, [scene?.id]);
 
@@ -694,17 +777,28 @@ export function SceneWorkspaceView() {
     : false;
   const currentBeatLines = splitLines(planning.beatOutline);
   const proposedBeatLines = splitLines(beatReview?.result.beatOutline ?? "");
-  const currentDraftText = getHtmlTextContent(draft);
-  const proposedDraftText = getHtmlTextContent(
+  const selectedBeatOutline = buildSelectedBeatOutline(
+    proposedBeatLines,
+    selectedBeatIndexes,
+  );
+  const selectedBeatCount = splitLines(selectedBeatOutline).length;
+  const proposedDraftBlocks = getDraftReviewBlocks(
     draftReview?.result.manuscriptText ?? "",
   );
+  const selectedDraftHtml = buildSelectedDraftHtml(
+    proposedDraftBlocks,
+    selectedDraftBlockIndexes,
+  );
+  const selectedDraftBlockCount = getDraftReviewBlocks(selectedDraftHtml).length;
+  const currentDraftText = getHtmlTextContent(draft);
+  const selectedDraftText = getHtmlTextContent(selectedDraftHtml);
   const currentDraftWordCount = countWords(currentDraftText);
-  const proposedDraftWordCount = countWords(proposedDraftText);
+  const selectedDraftWordCount = countWords(selectedDraftText);
   const canAppendBeats =
-    Boolean(beatReview?.result.beatOutline.trim()) &&
+    Boolean(selectedBeatOutline) &&
     planning.beatOutline.trim().length > 0;
   const canAppendDraft =
-    Boolean(draftReview?.result.manuscriptText.trim()) && !isBlankHtml(draft);
+    !isBlankHtml(selectedDraftHtml) && !isBlankHtml(draft);
 
   async function handleSaveMetadata() {
     if (!planningDirty) {
@@ -722,6 +816,7 @@ export function SceneWorkspaceView() {
     setIsGeneratingBeats(true);
     setSceneAiError(null);
     setBeatReview(null);
+    setSelectedBeatIndexes([]);
 
     try {
       const response = await runStructuredAiAction({
@@ -752,6 +847,9 @@ export function SceneWorkspaceView() {
       });
 
       setBeatReview(response);
+      setSelectedBeatIndexes(
+        splitLines(response.result.beatOutline).map((_, index) => index),
+      );
       setWorkspaceTab("beats");
     } catch (error) {
       setSceneAiError(
@@ -766,10 +864,11 @@ export function SceneWorkspaceView() {
 
   function handleCancelBeatReview() {
     setBeatReview(null);
+    setSelectedBeatIndexes([]);
   }
 
   function handleApplyBeatOutline(mode: "replace" | "append" = "replace") {
-    const nextBeatOutline = beatReview?.result.beatOutline.trim();
+    const nextBeatOutline = selectedBeatOutline;
     if (!nextBeatOutline) {
       return;
     }
@@ -781,6 +880,7 @@ export function SceneWorkspaceView() {
         : nextBeatOutline,
     );
     setBeatReview(null);
+    setSelectedBeatIndexes([]);
     setWorkspaceTab("beats");
   }
 
@@ -792,6 +892,7 @@ export function SceneWorkspaceView() {
     setIsGeneratingDraft(true);
     setSceneAiError(null);
     setDraftReview(null);
+    setSelectedDraftBlockIndexes([]);
 
     try {
       const response = await runStructuredAiAction({
@@ -822,6 +923,9 @@ export function SceneWorkspaceView() {
       });
 
       setDraftReview(response);
+      setSelectedDraftBlockIndexes(
+        getDraftReviewBlocks(response.result.manuscriptText).map((_, index) => index),
+      );
       setWorkspaceTab("draft");
     } catch (error) {
       setSceneAiError(
@@ -836,10 +940,11 @@ export function SceneWorkspaceView() {
 
   function handleCancelDraftReview() {
     setDraftReview(null);
+    setSelectedDraftBlockIndexes([]);
   }
 
   function handleApplyDraft(mode: "replace" | "append" = "replace") {
-    const generatedDraft = draftReview?.result.manuscriptText || "<p></p>";
+    const generatedDraft = selectedDraftHtml || "<p></p>";
     const nextDraft =
       mode === "append" ? appendDraftHtml(draft, generatedDraft) : generatedDraft;
     setDraft(nextDraft);
@@ -847,6 +952,7 @@ export function SceneWorkspaceView() {
       editor.commands.setContent(nextDraft, false);
     }
     setDraftReview(null);
+    setSelectedDraftBlockIndexes([]);
     setWorkspaceTab("draft");
   }
 
@@ -1169,24 +1275,25 @@ export function SceneWorkspaceView() {
                         <Button
                           variant="secondary"
                           onClick={() => handleApplyBeatOutline("append")}
-                          disabled={!beatReview.result.beatOutline.trim()}
+                          disabled={!selectedBeatOutline}
                         >
-                          Append Beats
+                          Append Selected Beats
                         </Button>
                       ) : null}
                       <Button
                         onClick={() => handleApplyBeatOutline("replace")}
-                        disabled={!beatReview.result.beatOutline.trim()}
+                        disabled={!selectedBeatOutline}
                       >
                         <CheckSquare className="size-4" />
-                        Replace Beats
+                        Replace With Selected Beats
                       </Button>
                     </div>
                   }
                 />
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
-                  Current beats stay untouched until you choose Replace or Append.
+                  Current beats stay untouched while you review. Choose the beats you
+                  want, then append or replace using only the checked lines.
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -1202,14 +1309,85 @@ export function SceneWorkspaceView() {
 
                   <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-[var(--ink)]">Proposed Beat Outline</p>
+                      <div>
+                        <p className="font-semibold text-[var(--ink)]">Proposed Beat Outline</p>
+                        <p className="mt-1 text-xs text-[var(--ink-faint)]">
+                          Select only the beats you want to keep.
+                        </p>
+                      </div>
                       <Badge tone="accent">
-                        {proposedBeatLines.length} beat{proposedBeatLines.length === 1 ? "" : "s"}
+                        {selectedBeatCount} of {proposedBeatLines.length} selected
                       </Badge>
                     </div>
-                    <p className="mt-3 whitespace-pre-wrap">
-                      {beatReview.result.beatOutline || "No beat outline returned."}
-                    </p>
+                    {proposedBeatLines.length > 0 ? (
+                      <>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="px-3 py-1.5 text-xs"
+                            onClick={() =>
+                              setSelectedBeatIndexes(
+                                proposedBeatLines.map((_, index) => index),
+                              )
+                            }
+                          >
+                            Select All
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            className="px-3 py-1.5 text-xs"
+                            onClick={() => setSelectedBeatIndexes([])}
+                          >
+                            Clear
+                          </Button>
+                        </div>
+                        <div className="mt-3 grid gap-2">
+                          {proposedBeatLines.map((beat, index) => {
+                            const checked = selectedBeatIndexes.includes(index);
+
+                            return (
+                              <label
+                                key={`${index}-${beat}`}
+                                className={cn(
+                                  "flex items-start gap-3 rounded-2xl border px-3 py-3 transition",
+                                  checked
+                                    ? "border-[color:rgba(184,88,63,0.32)] bg-[color:rgba(184,88,63,0.08)]"
+                                    : "border-black/8 bg-white/72",
+                                )}
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) =>
+                                    setSelectedBeatIndexes((currentSelection) =>
+                                      event.target.checked
+                                        ? [...currentSelection, index].sort((left, right) => left - right)
+                                        : currentSelection.filter(
+                                            (selectedIndex) => selectedIndex !== index,
+                                          ),
+                                    )
+                                  }
+                                />
+                                <div className="grid gap-1">
+                                  <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                                    Beat {index + 1}
+                                  </span>
+                                  <span className="whitespace-pre-wrap text-[var(--ink)]">
+                                    {beat}
+                                  </span>
+                                </div>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <p className="mt-3 whitespace-pre-wrap">
+                        {beatReview.result.beatOutline || "No beat outline returned."}
+                      </p>
+                    )}
                   </div>
                 </div>
               </Panel>
@@ -1245,24 +1423,25 @@ export function SceneWorkspaceView() {
                         <Button
                           variant="secondary"
                           onClick={() => handleApplyDraft("append")}
-                          disabled={!draftReview.result.manuscriptText.trim()}
+                          disabled={isBlankHtml(selectedDraftHtml)}
                         >
-                          Append Draft
+                          Append Selected Draft
                         </Button>
                       ) : null}
                       <Button
                         onClick={() => handleApplyDraft("replace")}
-                        disabled={!draftReview.result.manuscriptText.trim()}
+                        disabled={isBlankHtml(selectedDraftHtml)}
                       >
                         <CheckSquare className="size-4" />
-                        Replace Draft
+                        Replace With Selected Draft
                       </Button>
                     </div>
                   }
                 />
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
-                  Current draft prose stays untouched until you choose Replace or Append.
+                  Current draft prose stays untouched while you review. Choose the
+                  blocks you want, then append or replace using only the checked prose.
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
@@ -1287,20 +1466,102 @@ export function SceneWorkspaceView() {
 
                   <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-[var(--ink)]">Proposed Draft</p>
+                      <div>
+                        <p className="font-semibold text-[var(--ink)]">Proposed Draft</p>
+                        <p className="mt-1 text-xs text-[var(--ink-faint)]">
+                          Select the draft blocks you want to apply.
+                        </p>
+                      </div>
                       <Badge tone="accent">
-                        {proposedDraftWordCount} word{proposedDraftWordCount === 1 ? "" : "s"}
+                        {selectedDraftBlockCount} of {proposedDraftBlocks.length} selected
                       </Badge>
                     </div>
                     <div className="mt-4 max-h-[18rem] overflow-y-auto">
-                      <div
-                        className="prose prose-sm max-w-none text-[var(--ink)]"
-                        dangerouslySetInnerHTML={{
-                          __html:
-                            draftReview.result.manuscriptText ||
-                            "<p>No draft text returned.</p>",
-                        }}
-                      />
+                      {proposedDraftBlocks.length > 0 ? (
+                        <>
+                          <div className="mb-3 flex flex-wrap gap-2">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-3 py-1.5 text-xs"
+                              onClick={() =>
+                                setSelectedDraftBlockIndexes(
+                                  proposedDraftBlocks.map((_, index) => index),
+                                )
+                              }
+                            >
+                              Select All
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              className="px-3 py-1.5 text-xs"
+                              onClick={() => setSelectedDraftBlockIndexes([])}
+                            >
+                              Clear
+                            </Button>
+                          </div>
+                          <div className="grid gap-3">
+                            {proposedDraftBlocks.map((block, index) => {
+                              const checked = selectedDraftBlockIndexes.includes(index);
+
+                              return (
+                                <label
+                                  key={`${index}-${block.text.slice(0, 32)}`}
+                                  className={cn(
+                                    "grid gap-3 rounded-2xl border px-4 py-4 transition",
+                                    checked
+                                      ? "border-[color:rgba(184,88,63,0.32)] bg-[color:rgba(184,88,63,0.08)]"
+                                      : "border-black/8 bg-white/72",
+                                  )}
+                                >
+                                  <span className="flex items-start gap-3">
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) =>
+                                        setSelectedDraftBlockIndexes(
+                                          (currentSelection) =>
+                                            event.target.checked
+                                              ? [...currentSelection, index].sort(
+                                                  (left, right) => left - right,
+                                                )
+                                              : currentSelection.filter(
+                                                  (selectedIndex) =>
+                                                    selectedIndex !== index,
+                                                ),
+                                        )
+                                      }
+                                    />
+                                    <span className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                                      Block {index + 1}
+                                    </span>
+                                  </span>
+                                  <div
+                                    className="prose prose-sm max-w-none text-[var(--ink)]"
+                                    dangerouslySetInnerHTML={{ __html: block.html }}
+                                  />
+                                </label>
+                              );
+                            })}
+                          </div>
+                          <div className="mt-3 text-xs text-[var(--ink-faint)]">
+                            Selected prose: {selectedDraftWordCount} word
+                            {selectedDraftWordCount === 1 ? "" : "s"} across{" "}
+                            {selectedDraftBlockCount} block
+                            {selectedDraftBlockCount === 1 ? "" : "s"}.
+                          </div>
+                        </>
+                      ) : (
+                        <div
+                          className="prose prose-sm max-w-none text-[var(--ink)]"
+                          dangerouslySetInnerHTML={{
+                            __html:
+                              draftReview.result.manuscriptText ||
+                              "<p>No draft text returned.</p>",
+                          }}
+                        />
+                      )}
                     </div>
                   </div>
                 </div>

@@ -513,7 +513,7 @@ describe("Scene workspace unsaved change protection", () => {
     queryClient.clear();
   });
 
-  it("reviews generated beats against the current outline and can append them", async () => {
+  it("reviews generated beats against the current outline and can append only selected beats", async () => {
     tauriApiMock.runStructuredAiAction.mockResolvedValue({
       providerId: "gemini",
       modelId: "gemini-2.5-flash",
@@ -554,14 +554,20 @@ describe("Scene workspace unsaved change protection", () => {
     await screen.findByText("Generated Beat Outline");
     await screen.findByText("Current Beat Outline");
     await screen.findByText("Proposed Beat Outline");
-    expect(screen.getByRole("button", { name: /replace beats/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /replace with selected beats/i }),
+    ).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /append beats/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /beat 2/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /beat 4/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /append selected beats/i }),
+    );
 
     expect(
       (screen.getByLabelText(/beat outline/i) as HTMLTextAreaElement).value,
     ).toBe(
-      "Ava meets the client at Dock Nine.\nThe crate reacts to her touch.\nShe takes the job even though the setup feels wrong.\nAva clocks the checkpoint rhythm.\nA guard spots the false paperwork.\nRian improvises a distraction.\nAva chooses the bolder lie.\nThey pass, but the warning follows them.",
+      "Ava meets the client at Dock Nine.\nThe crate reacts to her touch.\nShe takes the job even though the setup feels wrong.\nAva clocks the checkpoint rhythm.\nRian improvises a distraction.\nThey pass, but the warning follows them.",
     );
     expect(screen.getByRole("button", { name: /save planning/i })).toBeTruthy();
 
@@ -619,7 +625,7 @@ describe("Scene workspace unsaved change protection", () => {
     queryClient.clear();
   });
 
-  it("reviews generated rough draft prose against the current draft and can append it", async () => {
+  it("reviews generated rough draft prose against the current draft and can append only selected blocks", async () => {
     tauriApiMock.runStructuredAiAction.mockResolvedValue({
       providerId: "gemini",
       modelId: "gemini-2.5-flash",
@@ -659,12 +665,17 @@ describe("Scene workspace unsaved change protection", () => {
     await screen.findByText("Rough Draft Review");
     await screen.findByText("Current Draft");
     await screen.findByText("Proposed Draft");
-    expect(screen.getByRole("button", { name: /replace draft/i })).toBeTruthy();
+    expect(
+      screen.getByRole("button", { name: /replace with selected draft/i }),
+    ).toBeTruthy();
     vi.useFakeTimers();
-    fireEvent.click(screen.getByRole("button", { name: /append draft/i }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /block 1/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /append selected draft/i }),
+    );
 
     expect(tiptapMock.editor.commands.setContent).toHaveBeenCalledWith(
-      "<p>Ava hated jobs that breathed.</p><p>The crate pulsed once under her hand.</p><p></p><p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
+      "<p>Ava hated jobs that breathed.</p><p>The crate pulsed once under her hand.</p><p></p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
       false,
     );
 
@@ -678,7 +689,7 @@ describe("Scene workspace unsaved change protection", () => {
       projectId: currentSnapshot.project.id,
       sceneId: "scene-1",
       manuscriptText:
-        "<p>Ava hated jobs that breathed.</p><p>The crate pulsed once under her hand.</p><p></p><p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
+        "<p>Ava hated jobs that breathed.</p><p>The crate pulsed once under her hand.</p><p></p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
     });
 
     unmount();
