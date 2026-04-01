@@ -2,9 +2,9 @@ import { Plus } from "lucide-react";
 import { Button, Panel, SectionHeading } from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { createId } from "@/lib/ids";
 import { SceneBoard } from "./SceneBoard";
 import { useUiStore } from "@/store/uiStore";
+import { createEmptySceneInput } from "./sceneFactories";
 
 export function ScenesView() {
   const snapshotQuery = useProjectSnapshot();
@@ -24,25 +24,14 @@ export function ScenesView() {
         .filter((scene) => (scene.chapterId ?? null) === chapterId)
         .reduce((max, scene) => Math.max(max, scene.orderIndex), -1) + 1;
 
-    await saveScene({
-      id: createId("scene"),
-      projectId: currentSnapshot.project.id,
-      chapterId,
-      orderIndex: nextIndex,
-      title: `Scene ${currentSnapshot.scenes.length + 1}`,
-      summary: "",
-      purpose: "",
-      beatOutline: "",
-      conflict: "",
-      outcome: "",
-      povCharacterId: null,
-      location: "",
-      timeLabel: "",
-      involvedCharacterIds: [],
-      continuityTags: [],
-      dependencySceneIds: [],
-      manuscriptText: "<p></p>",
-    });
+    await saveScene(
+      createEmptySceneInput({
+        projectId: currentSnapshot.project.id,
+        chapterId,
+        orderIndex: nextIndex,
+        title: `Scene ${currentSnapshot.scenes.length + 1}`,
+      }),
+    );
   }
 
   return (
