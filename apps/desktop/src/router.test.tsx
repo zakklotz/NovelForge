@@ -172,4 +172,112 @@ describe("AppRouter loaded project flow", () => {
     unmount();
     queryClient.clear();
   });
+
+  it("restores the last open scene workspace route on launch", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/scenes/scene-1",
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Frame")).toBeTruthy();
+    });
+
+    expect(screen.getByDisplayValue("Dock Nine Exchange")).toBeTruthy();
+    expect(window.location.pathname).toBe("/scenes/scene-1");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("falls back to the chapters view when a restored chapter route is stale", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/chapters/chapter-missing",
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapters").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("Chapter not found")).toBeNull();
+    expect(window.location.pathname).toBe("/chapters");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("falls back to the scenes view when a restored scene route is stale", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/scenes/scene-missing",
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Scenes").length).toBeGreaterThan(0);
+    });
+
+    expect(screen.queryByText("Scene not found")).toBeNull();
+    expect(window.location.pathname).toBe("/scenes");
+
+    unmount();
+    queryClient.clear();
+  });
 });

@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { sampleProjectSnapshot } from "@novelforge/test-fixtures";
 import {
   DEFAULT_PROJECT_ROUTE,
   normalizeProjectRoute,
@@ -33,14 +34,38 @@ describe("project route helpers", () => {
     expect(shouldPersistProjectRoute("/scenes/scene-1")).toBe(false);
   });
 
-  it("resolves chapter detail routes into typed router navigation targets", () => {
-    expect(resolveProjectRouteNavigation("/chapters/chapter-1")).toEqual({
+  it("resolves valid detail routes into typed router navigation targets", () => {
+    expect(
+      resolveProjectRouteNavigation("/chapters/chapter-1", sampleProjectSnapshot),
+    ).toEqual({
       to: "/chapters/$chapterId",
       params: {
         chapterId: "chapter-1",
       },
     });
-    expect(resolveProjectRouteNavigation("/scenes/scene-1")).toEqual({
+    expect(resolveProjectRouteNavigation("/scenes/scene-1", sampleProjectSnapshot)).toEqual({
+      to: "/scenes/$sceneId",
+      params: {
+        sceneId: "scene-1",
+      },
+    });
+  });
+
+  it("falls back to safe parent routes when detail targets are stale", () => {
+    expect(
+      resolveProjectRouteNavigation("/chapters/chapter-missing", sampleProjectSnapshot),
+    ).toEqual({
+      to: "/chapters",
+    });
+    expect(
+      resolveProjectRouteNavigation("/scenes/scene-missing", sampleProjectSnapshot),
+    ).toEqual({
+      to: "/scenes",
+    });
+  });
+
+  it("falls back to the default route for other invalid routes", () => {
+    expect(resolveProjectRouteNavigation("/unknown/detail", sampleProjectSnapshot)).toEqual({
       to: DEFAULT_PROJECT_ROUTE,
     });
   });

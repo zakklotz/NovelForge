@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
-import type { CreateProjectInput } from "@novelforge/domain";
+import type { CreateProjectInput, ProjectSnapshot } from "@novelforge/domain";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { Button, EmptyState, Field, Input, Panel } from "@/components/ui";
@@ -103,19 +103,27 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const [startupError, setStartupError] = useState<string | null>(null);
   const hasAttemptedRestore = useRef(false);
 
-  const openWorkspace = useEffectEvent(async (route: string | null | undefined) => {
-    const target = resolveProjectRouteNavigation(route);
+  const openWorkspace = useEffectEvent(
+    async (
+      route: string | null | undefined,
+      snapshotOverride?: Pick<ProjectSnapshot, "chapters" | "scenes">,
+    ) => {
+      const routeSnapshot = snapshotOverride ?? snapshotQuery.data;
+      const target = routeSnapshot
+        ? resolveProjectRouteNavigation(route, routeSnapshot)
+        : resolveProjectRouteNavigation(route);
 
-    if (target.to === "/chapters/$chapterId") {
-      await navigate({
-        to: target.to,
-        params: target.params,
-      });
-      return;
-    }
+      if (target.to === "/chapters/$chapterId" || target.to === "/scenes/$sceneId") {
+        await navigate({
+          to: target.to,
+          params: target.params,
+        });
+        return;
+      }
 
-    await navigate({ to: target.to });
-  });
+      await navigate({ to: target.to });
+    },
+  );
 
   const runProtectedProjectAction = useEffectEvent(
     async (targetLabel: string, action: () => Promise<void>) => {
@@ -157,7 +165,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
 
         const snapshot = await createProject(input);
         setProjectTitle("");
-        await openWorkspace(snapshot.projectState.lastRoute);
+        await openWorkspace(snapshot.projectState.lastRoute, snapshot);
       } catch (error) {
         setStartupError(
           error instanceof Error
@@ -189,7 +197,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
         }
 
         const snapshot = await openProject({ path });
-        await openWorkspace(snapshot.projectState.lastRoute);
+        await openWorkspace(snapshot.projectState.lastRoute, snapshot);
       } catch (error) {
         setStartupError(
           error instanceof Error
@@ -247,7 +255,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
         if (cancelled || !snapshot) {
           return;
         }
-        await openWorkspace(snapshot.projectState.lastRoute);
+        await openWorkspace(snapshot.projectState.lastRoute, snapshot);
       } finally {
         if (!cancelled) {
           setIsRestoring(false);
