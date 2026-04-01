@@ -35,6 +35,7 @@ vi.mock("@/lib/tauri", () => ({
     listRecommendedModels: tauriApiMock.listRecommendedModels,
     testProviderConnection: tauriApiMock.testProviderConnection,
     runScratchpadChat: vi.fn(),
+    runStructuredAiAction: vi.fn(),
     applyScratchpadResult: vi.fn(),
   },
 }));

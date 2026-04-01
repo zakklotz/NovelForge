@@ -27,6 +27,7 @@ const tauriApiMock = vi.hoisted(() => ({
   listRecommendedModels: vi.fn(),
   testProviderConnection: vi.fn(),
   runScratchpadChat: vi.fn(),
+  runStructuredAiAction: vi.fn(),
   applyScratchpadResult: vi.fn(),
 }));
 
@@ -142,6 +143,7 @@ vi.mock("@/lib/tauri", () => ({
     listRecommendedModels: tauriApiMock.listRecommendedModels,
     testProviderConnection: tauriApiMock.testProviderConnection,
     runScratchpadChat: tauriApiMock.runScratchpadChat,
+    runStructuredAiAction: tauriApiMock.runStructuredAiAction,
     applyScratchpadResult: tauriApiMock.applyScratchpadResult,
   },
 }));
@@ -505,6 +507,121 @@ describe("Scene workspace unsaved change protection", () => {
 
     await waitFor(() => {
       expect(windowApiMock.destroy).toHaveBeenCalledTimes(1);
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("reviews generated beats before replacing the current beat outline", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "scene-generate-beats",
+      assistantMessage: "I tightened the beat progression around Ava's pressure.",
+      result: {
+        summary: "Five beats now track the scene's pressure turn by turn.",
+        sceneProposals: [],
+        beatOutline:
+          "Ava clocks the checkpoint rhythm.\nA guard spots the false paperwork.\nRian improvises a distraction.\nAva chooses the bolder lie.\nThey pass, but the warning follows them.",
+        manuscriptText: "",
+      },
+    });
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+
+    fireEvent.change(screen.getByLabelText(/summary/i), {
+      target: { value: "Unsaved summary context should feed the beat generation." },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /generate beats/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.runStructuredAiAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: currentSnapshot.project.id,
+          action: "scene-generate-beats",
+          sceneId: "scene-1",
+          workspaceContext: expect.stringContaining(
+            "Unsaved summary context should feed the beat generation.",
+          ),
+        }),
+      );
+    });
+
+    await screen.findByText("Generated Beat Outline");
+    fireEvent.click(screen.getByRole("button", { name: /replace beats/i }));
+
+    expect(
+      (screen.getByLabelText(/beat outline/i) as HTMLTextAreaElement).value,
+    ).toBe(
+      "Ava clocks the checkpoint rhythm.\nA guard spots the false paperwork.\nRian improvises a distraction.\nAva chooses the bolder lie.\nThey pass, but the warning follows them.",
+    );
+    expect(screen.getByRole("button", { name: /save planning/i })).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("reviews generated rough draft prose before replacing manuscript text", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "scene-expand-draft",
+      assistantMessage: "I expanded the beats into a short rough draft.",
+      result: {
+        summary: "A compact rough draft is ready for the scene workspace.",
+        sceneProposals: [],
+        beatOutline: "",
+        manuscriptText:
+          "<p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
+      },
+    });
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+    const expandDraftButton = await screen.findByRole("button", {
+      name: /expand to draft/i,
+    });
+    await waitFor(() => {
+      expect((expandDraftButton as HTMLButtonElement).disabled).toBe(false);
+    });
+
+    fireEvent.click(expandDraftButton);
+
+    await waitFor(() => {
+      expect(tauriApiMock.runStructuredAiAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: currentSnapshot.project.id,
+          action: "scene-expand-draft",
+          sceneId: "scene-1",
+        }),
+      );
+    });
+
+    await screen.findByText("Rough Draft Review");
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByRole("button", { name: /replace draft/i }));
+
+    expect(tiptapMock.editor.commands.setContent).toHaveBeenCalledWith(
+      "<p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
+      false,
+    );
+
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(tauriApiMock.saveManuscript).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      manuscriptText:
+        "<p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
     });
 
     unmount();

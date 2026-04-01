@@ -20,6 +20,7 @@ const tauriApiMock = vi.hoisted(() => ({
   listRecommendedModels: vi.fn(),
   testProviderConnection: vi.fn(),
   runScratchpadChat: vi.fn(),
+  runStructuredAiAction: vi.fn(),
   applyScratchpadResult: vi.fn(),
 }));
 
@@ -46,6 +47,7 @@ vi.mock("@/lib/tauri", () => ({
     listRecommendedModels: tauriApiMock.listRecommendedModels,
     testProviderConnection: tauriApiMock.testProviderConnection,
     runScratchpadChat: tauriApiMock.runScratchpadChat,
+    runStructuredAiAction: tauriApiMock.runStructuredAiAction,
     applyScratchpadResult: tauriApiMock.applyScratchpadResult,
   },
 }));
@@ -334,6 +336,112 @@ describe("Chapter workspace", () => {
     expect(
       (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
     ).toBe("Ava accepts a courier job she does not understand.");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("reviews proposed scenes before inserting them into the chapter", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "chapter-propose-scenes",
+      assistantMessage: "I proposed two scenes that tighten the chapter escalation.",
+      result: {
+        summary: "Two new scenes bridge the chapter's commitment and fallout.",
+        sceneProposals: [
+          {
+            targetSceneId: null,
+            chapterId: "chapter-1",
+            chapterTitleHint: null,
+            title: "Customs False Alarm",
+            summary: "Ava nearly gets exposed before the plan resets.",
+            purpose: "Escalate the chapter's pressure.",
+            beatOutline: "Alarm sounds\nAva improvises\nThe threat retreats for now",
+            conflict: "A guard notices the wrong detail.",
+            outcome: "Ava buys a little more time.",
+            povCharacterId: "char-ava",
+            location: "Harbor checkpoint",
+            timeLabel: "Predawn",
+            involvedCharacterIds: ["char-ava", "char-rian"],
+            continuityTags: ["inspection"],
+            dependencySceneIds: ["scene-2"],
+            manuscriptText: "<p></p>",
+          },
+          {
+            targetSceneId: null,
+            chapterId: "chapter-1",
+            chapterTitleHint: null,
+            title: "Safehouse Bargain",
+            summary: "Rian trades part of the truth for Ava's continued help.",
+            purpose: "Reframe the alliance before the chapter closes.",
+            beatOutline: "They reach shelter\nRian admits a limit\nAva stays for her own reasons",
+            conflict: "Ava wants honesty while Rian wants control.",
+            outcome: "They keep moving together, but with new terms.",
+            povCharacterId: "char-ava",
+            location: "Abandoned watchtower",
+            timeLabel: "Before dawn",
+            involvedCharacterIds: ["char-ava", "char-rian"],
+            continuityTags: ["alliance"],
+            dependencySceneIds: ["scene-2"],
+            manuscriptText: "<p></p>",
+          },
+        ],
+        beatOutline: "",
+        manuscriptText: "",
+      },
+    });
+
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Summarize the chapter's visible movement."), {
+      target: {
+        value: "Unsaved chapter context should still inform the scene proposals.",
+      },
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /propose scenes/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.runStructuredAiAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          projectId: currentSnapshot.project.id,
+          action: "chapter-propose-scenes",
+          chapterId: "chapter-1",
+          workspaceContext: expect.stringContaining(
+            "Unsaved chapter context should still inform the scene proposals.",
+          ),
+        }),
+      );
+    });
+
+    await screen.findByText("Scene Proposals");
+    expect(tauriApiMock.saveScene).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /insert selected/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.saveScene).toHaveBeenCalledTimes(2);
+    });
+    expect(tauriApiMock.saveScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapterId: "chapter-1",
+        title: "Customs False Alarm",
+        beatOutline: "Alarm sounds\nAva improvises\nThe threat retreats for now",
+      }),
+    );
+    expect(tauriApiMock.saveScene).toHaveBeenCalledWith(
+      expect.objectContaining({
+        chapterId: "chapter-1",
+        title: "Safehouse Bargain",
+      }),
+    );
+
+    await screen.findByText("Inserted 2 proposed scenes into this chapter.");
 
     unmount();
     queryClient.clear();

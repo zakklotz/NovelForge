@@ -5,8 +5,10 @@ import type {
   ApplyScratchpadResultOutput,
   ProviderConnectionResult,
   RunScratchpadChatInput,
+  RunStructuredAiActionInput,
   SaveAppSettingsInput,
   ScratchpadChatResponse,
+  StructuredAiResponse,
   TestProviderConnectionInput,
 } from "@novelforge/domain";
 import { tauriApi } from "@/lib/tauri";
@@ -41,6 +43,10 @@ export function useAiRuntime() {
     return tauriApi.runScratchpadChat(input) as Promise<ScratchpadChatResponse>;
   }
 
+  async function runStructuredAiAction(input: RunStructuredAiActionInput) {
+    return tauriApi.runStructuredAiAction(input) as Promise<StructuredAiResponse>;
+  }
+
   async function applyScratchpadResult(input: ApplyScratchpadResultInput) {
     const output =
       (await tauriApi.applyScratchpadResult(input)) as ApplyScratchpadResultOutput;
@@ -54,6 +60,7 @@ export function useAiRuntime() {
     saveAppSettings,
     testProviderConnection,
     runScratchpadChat,
+    runStructuredAiAction,
     applyScratchpadResult,
   };
 }

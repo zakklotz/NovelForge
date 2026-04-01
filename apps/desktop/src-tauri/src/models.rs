@@ -339,6 +339,25 @@ pub struct ScratchpadChatResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct StructuredAIResult {
+    pub summary: String,
+    pub scene_proposals: Vec<SceneProposal>,
+    pub beat_outline: String,
+    pub manuscript_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StructuredAIResponse {
+    pub provider_id: String,
+    pub model_id: String,
+    pub action: String,
+    pub assistant_message: String,
+    pub result: StructuredAIResult,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ApplyScratchpadResultOutput {
     pub applied: Vec<DomainObjectRef>,
     pub events: Vec<Value>,
@@ -484,6 +503,18 @@ pub struct RunScratchpadChatInput {
     pub messages: Vec<ScratchpadMessage>,
     pub user_input: String,
     pub project_context: ScratchpadProjectContext,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RunStructuredAIActionInput {
+    pub project_id: String,
+    pub provider_id: String,
+    pub model_id: String,
+    pub action: String,
+    pub chapter_id: Option<String>,
+    pub scene_id: Option<String>,
+    pub workspace_context: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

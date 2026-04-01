@@ -10,6 +10,7 @@ import {
   scratchpadProjectContextSchema,
   scratchpadResultSchema,
   sceneSchema,
+  structuredAiActionSchema,
   suggestionStatusSchema,
 } from "./models";
 
@@ -176,6 +177,20 @@ export const runScratchpadChatInputSchema = z.object({
 });
 
 export type RunScratchpadChatInput = z.infer<typeof runScratchpadChatInputSchema>;
+
+export const runStructuredAiActionInputSchema = z.object({
+  projectId: z.string(),
+  providerId: aiProviderIdSchema,
+  modelId: z.string().min(1),
+  action: structuredAiActionSchema,
+  chapterId: z.string().optional(),
+  sceneId: z.string().optional(),
+  workspaceContext: z.string().default(""),
+});
+
+export type RunStructuredAiActionInput = z.infer<
+  typeof runStructuredAiActionInputSchema
+>;
 
 export const applyScratchpadResultInputSchema = z.object({
   projectId: z.string(),

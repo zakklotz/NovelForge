@@ -18,6 +18,7 @@ const tauriApiMock = vi.hoisted(() => ({
   listRecommendedModels: vi.fn(),
   testProviderConnection: vi.fn(),
   runScratchpadChat: vi.fn(),
+  runStructuredAiAction: vi.fn(),
   applyScratchpadResult: vi.fn(),
 }));
 
@@ -44,6 +45,7 @@ vi.mock("@/lib/tauri", () => ({
     listRecommendedModels: tauriApiMock.listRecommendedModels,
     testProviderConnection: tauriApiMock.testProviderConnection,
     runScratchpadChat: tauriApiMock.runScratchpadChat,
+    runStructuredAiAction: tauriApiMock.runStructuredAiAction,
     applyScratchpadResult: tauriApiMock.applyScratchpadResult,
   },
 }));

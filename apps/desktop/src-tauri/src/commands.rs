@@ -8,9 +8,9 @@ use crate::models::{
     ApplyScratchpadResultInput, ApplyScratchpadResultOutput, ApplySuggestionInput, AppSettings,
     CreateProjectInput, DismissSuggestionInput, MoveSceneInput, OpenProjectInput, ProjectSnapshot,
     ProjectState, ProviderConnectionResult, RecommendedModel, RunScratchpadChatInput,
-    SaveAppSettingsInput, SaveChapterInput, SaveCharacterInput, SaveManuscriptInput,
-    SaveSceneInput, ScratchpadChatResponse, Suggestion, SyncSuggestionsInput,
-    TestProviderConnectionInput,
+    RunStructuredAIActionInput, SaveAppSettingsInput, SaveChapterInput, SaveCharacterInput,
+    SaveManuscriptInput, SaveSceneInput, ScratchpadChatResponse, StructuredAIResponse,
+    Suggestion, SyncSuggestionsInput, TestProviderConnectionInput,
 };
 use crate::state::AppState;
 
@@ -247,6 +247,22 @@ pub async fn run_scratchpad_chat(
         return Err("Scratchpad request does not match the currently open project.".to_string());
     }
     ai::run_scratchpad_chat(&app, &snapshot, input)
+        .await
+        .map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub async fn run_structured_ai_action(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    input: RunStructuredAIActionInput,
+) -> Result<StructuredAIResponse, String> {
+    let path = resolve_current_path(&state).map_err(|error| error.to_string())?;
+    let snapshot = db::get_snapshot(&path).map_err(|error| error.to_string())?;
+    if snapshot.project.id != input.project_id {
+        return Err("Structured AI request does not match the currently open project.".to_string());
+    }
+    ai::run_structured_ai_action(&app, &snapshot, input)
         .await
         .map_err(|error| error.to_string())
 }

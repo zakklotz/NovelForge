@@ -13,12 +13,14 @@ import type {
   ProjectState,
   RecommendedModel,
   RunScratchpadChatInput,
+  RunStructuredAiActionInput,
   SaveChapterInput,
   SaveAppSettingsInput,
   SaveCharacterInput,
   SaveManuscriptInput,
   SaveSceneInput,
   ScratchpadChatResponse,
+  StructuredAiResponse,
   Suggestion,
   TestProviderConnectionInput,
   UpdateSuggestionStatusInput,
@@ -68,6 +70,8 @@ export const tauriApi = {
     invoke<ProviderConnectionResult>("test_provider_connection", { input }),
   runScratchpadChat: (input: RunScratchpadChatInput) =>
     invoke<ScratchpadChatResponse>("run_scratchpad_chat", { input }),
+  runStructuredAiAction: (input: RunStructuredAiActionInput) =>
+    invoke<StructuredAiResponse>("run_structured_ai_action", { input }),
   applyScratchpadResult: (input: ApplyScratchpadResultInput) =>
     invoke<ApplyScratchpadResultOutput>("apply_scratchpad_result", { input }),
 };

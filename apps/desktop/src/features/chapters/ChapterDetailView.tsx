@@ -1,14 +1,17 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
-import type { Chapter } from "@novelforge/domain";
+import type { Chapter, StructuredAiResponse } from "@novelforge/domain";
 import {
   ArrowLeft,
+  CheckSquare,
   FileText,
   ListOrdered,
   Plus,
+  RefreshCw,
   Save,
   Target,
   Users,
+  WandSparkles,
 } from "lucide-react";
 import {
   Badge,
@@ -20,6 +23,8 @@ import {
   SectionHeading,
   Textarea,
 } from "@/components/ui";
+import { useAiRuntime } from "@/hooks/useAiRuntime";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { splitLines } from "@/lib/utils";
@@ -106,14 +111,63 @@ function getChangedFields(
   ].filter((value): value is string => Boolean(value));
 }
 
+function toggleIndex(values: number[], index: number) {
+  return values.includes(index)
+    ? values.filter((value) => value !== index)
+    : [...values, index].sort((left, right) => left - right);
+}
+
+function buildChapterWorkspaceAiContext(
+  chapter: Chapter,
+  planning: ChapterPlanningState,
+  chapterScenes: Array<{
+    id: string;
+    orderIndex: number;
+    title: string;
+    summary: string;
+    purpose: string;
+    outcome: string;
+  }>,
+  focusedCharacters: Array<{ id: string; name: string; role: string }>,
+) {
+  return JSON.stringify(
+    {
+      chapterPlanningDraft: {
+        id: chapter.id,
+        title: planning.title,
+        summary: planning.summary,
+        purpose: planning.purpose,
+        majorEvents: splitLines(planning.majorEvents),
+        emotionalMovement: planning.emotionalMovement,
+        setupPayoffNotes: planning.setupPayoffNotes,
+        characterFocusIds: planning.characterFocusIds,
+      },
+      currentChapterScenes: chapterScenes.map((scene) => ({
+        id: scene.id,
+        orderIndex: scene.orderIndex,
+        title: scene.title,
+        summary: scene.summary,
+        purpose: scene.purpose,
+        outcome: scene.outcome,
+      })),
+      focusedCharacters,
+    },
+    null,
+    2,
+  );
+}
+
 export function ChapterDetailView() {
   const navigate = useNavigate();
   const { chapterId } = useParams({ from: "/chapters/$chapterId" });
   const snapshotQuery = useProjectSnapshot();
+  const appSettingsQuery = useAppSettings();
+  const { runStructuredAiAction } = useAiRuntime();
   const { saveChapter, saveScene } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
+  const appSettings = appSettingsQuery.data;
 
   const chapter = snapshot?.chapters.find((item) => item.id === chapterId);
   const [planning, setPlanning] = useState<ChapterPlanningState>(() =>
@@ -127,6 +181,15 @@ export function ChapterDetailView() {
   const activeChapterIdRef = useRef<string | null>(null);
   const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
+  const [sceneProposalResponse, setSceneProposalResponse] =
+    useState<StructuredAiResponse | null>(null);
+  const [selectedSceneProposalIndexes, setSelectedSceneProposalIndexes] = useState<
+    number[]
+  >([]);
+  const [isGeneratingSceneProposals, setIsGeneratingSceneProposals] = useState(false);
+  const [isApplyingSceneProposals, setIsApplyingSceneProposals] = useState(false);
+  const [sceneProposalError, setSceneProposalError] = useState<string | null>(null);
+  const [sceneProposalMessage, setSceneProposalMessage] = useState<string | null>(null);
 
   useEffect(() => {
     planningRef.current = planning;
@@ -156,6 +219,13 @@ export function ChapterDetailView() {
     });
     setSelectedChapterId(chapter.id);
   }, [chapter, setSelectedChapterId]);
+
+  useEffect(() => {
+    setSceneProposalResponse(null);
+    setSelectedSceneProposalIndexes([]);
+    setSceneProposalError(null);
+    setSceneProposalMessage(null);
+  }, [chapter?.id]);
 
   const chapterDirty = Boolean(chapter) && !arePlanningStatesEqual(planning, persistedPlanning);
   const dirtyAreas = chapterDirty ? (["planning"] as const) : [];
@@ -214,6 +284,15 @@ export function ChapterDetailView() {
   const focusedCharacters = currentSnapshot.characters.filter((character) =>
     planning.characterFocusIds.includes(character.id),
   );
+  const defaultProviderId = appSettings?.ai.defaultProvider;
+  const defaultModelId = defaultProviderId
+    ? appSettings.ai.providers[defaultProviderId].defaultModel
+    : "";
+  const hasConfiguredAi = defaultProviderId
+    ? appSettings?.ai.providers[defaultProviderId].hasApiKey &&
+      defaultModelId.trim().length > 0
+    : false;
+  const selectedSceneProposalCount = selectedSceneProposalIndexes.length;
 
   function updatePlanningField<Key extends keyof ChapterPlanningState>(
     field: Key,
@@ -287,6 +366,106 @@ export function ChapterDetailView() {
         title: `Scene ${chapterScenes.length + 1}`,
       }),
     );
+  }
+
+  async function handleProposeScenes() {
+    if (!defaultProviderId || !defaultModelId.trim()) {
+      return;
+    }
+
+    setIsGeneratingSceneProposals(true);
+    setSceneProposalError(null);
+    setSceneProposalMessage(null);
+    setSceneProposalResponse(null);
+
+    try {
+      const response = await runStructuredAiAction({
+        projectId: currentSnapshot.project.id,
+        providerId: defaultProviderId,
+        modelId: defaultModelId.trim(),
+        action: "chapter-propose-scenes",
+        chapterId: currentChapter.id,
+        workspaceContext: buildChapterWorkspaceAiContext(
+          currentChapter,
+          planning,
+          chapterScenes,
+          focusedCharacters.map((character) => ({
+            id: character.id,
+            name: character.name,
+            role: character.role,
+          })),
+        ),
+      });
+
+      setSceneProposalResponse(response);
+      setSelectedSceneProposalIndexes(
+        response.result.sceneProposals.map((_, index) => index),
+      );
+    } catch (error) {
+      setSceneProposalError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not propose scenes for this chapter.",
+      );
+    } finally {
+      setIsGeneratingSceneProposals(false);
+    }
+  }
+
+  async function handleInsertSceneProposals() {
+    if (!sceneProposalResponse || selectedSceneProposalCount === 0) {
+      return;
+    }
+
+    setIsApplyingSceneProposals(true);
+    setSceneProposalError(null);
+
+    try {
+      const selectedProposals = sceneProposalResponse.result.sceneProposals.filter(
+        (_, index) => selectedSceneProposalIndexes.includes(index),
+      );
+
+      for (const [index, proposal] of selectedProposals.entries()) {
+        const draftScene = createEmptySceneInput({
+          projectId: currentSnapshot.project.id,
+          chapterId: currentChapter.id,
+          orderIndex: chapterScenes.length + index,
+          title: proposal.title,
+        });
+
+        await saveScene({
+          ...draftScene,
+          summary: proposal.summary,
+          purpose: proposal.purpose,
+          beatOutline: proposal.beatOutline,
+          conflict: proposal.conflict,
+          outcome: proposal.outcome,
+          povCharacterId: proposal.povCharacterId,
+          location: proposal.location,
+          timeLabel: proposal.timeLabel,
+          involvedCharacterIds: proposal.involvedCharacterIds,
+          continuityTags: proposal.continuityTags,
+          dependencySceneIds: proposal.dependencySceneIds,
+          manuscriptText: proposal.manuscriptText || "<p></p>",
+        });
+      }
+
+      setSceneProposalMessage(
+        `Inserted ${selectedProposals.length} proposed scene${
+          selectedProposals.length === 1 ? "" : "s"
+        } into this chapter.`,
+      );
+      setSceneProposalResponse(null);
+      setSelectedSceneProposalIndexes([]);
+    } catch (error) {
+      setSceneProposalError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not insert the proposed scenes.",
+      );
+    } finally {
+      setIsApplyingSceneProposals(false);
+    }
   }
 
   return (
@@ -431,10 +610,24 @@ export function ChapterDetailView() {
           title="Scene Plan"
           description="Scenes stay in the authoritative backend order for this chapter. Add new scenes here, then jump into any scene workspace when you need detail."
           actions={
-            <Button onClick={() => void handleCreateScene()}>
-              <Plus className="size-4" />
-              Add Scene
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => void handleProposeScenes()}
+                disabled={!hasConfiguredAi || isGeneratingSceneProposals}
+              >
+                {isGeneratingSceneProposals ? (
+                  <RefreshCw className="size-4 animate-spin" />
+                ) : (
+                  <WandSparkles className="size-4" />
+                )}
+                Propose Scenes
+              </Button>
+              <Button onClick={() => void handleCreateScene()}>
+                <Plus className="size-4" />
+                Add Scene
+              </Button>
+            </div>
           }
         />
 
@@ -479,6 +672,111 @@ export function ChapterDetailView() {
             </div>
           </Panel>
         </div>
+
+        {!hasConfiguredAi ? (
+          <Panel className="mt-6 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+            <p className="text-sm text-[var(--warning)]">
+              Add a default AI provider and API key in Settings to propose scenes from
+              this chapter plan.
+            </p>
+          </Panel>
+        ) : null}
+
+        {sceneProposalError ? (
+          <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+            <p className="text-sm text-[var(--danger)]">{sceneProposalError}</p>
+          </Panel>
+        ) : null}
+
+        {sceneProposalMessage ? (
+          <Panel className="mt-6 bg-[color:rgba(32,151,110,0.08)] shadow-none">
+            <p className="text-sm text-[color:#0f7350]">{sceneProposalMessage}</p>
+          </Panel>
+        ) : null}
+
+        {sceneProposalResponse ? (
+          <Panel className="mt-6 bg-white/75 shadow-none">
+            <SectionHeading
+              title="Scene Proposals"
+              description={
+                sceneProposalResponse.result.summary ||
+                sceneProposalResponse.assistantMessage ||
+                "Review the proposed scenes before inserting them into the chapter."
+              }
+              actions={
+                <Button
+                  variant="secondary"
+                  onClick={() => void handleInsertSceneProposals()}
+                  disabled={selectedSceneProposalCount === 0 || isApplyingSceneProposals}
+                >
+                  {isApplyingSceneProposals ? (
+                    <RefreshCw className="size-4 animate-spin" />
+                  ) : (
+                    <CheckSquare className="size-4" />
+                  )}
+                  Insert Selected
+                </Button>
+              }
+            />
+
+            <div className="mt-4 grid gap-3">
+              {sceneProposalResponse.result.sceneProposals.length > 0 ? (
+                sceneProposalResponse.result.sceneProposals.map((proposal, index) => (
+                  <label
+                    key={`${proposal.title}-${index}`}
+                    className="grid gap-3 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                  >
+                    <span className="flex items-center gap-3">
+                      <input
+                        type="checkbox"
+                        checked={selectedSceneProposalIndexes.includes(index)}
+                        onChange={() =>
+                          setSelectedSceneProposalIndexes((current) =>
+                            toggleIndex(current, index),
+                          )
+                        }
+                      />
+                      <span className="font-semibold text-[var(--ink)]">
+                        {proposal.title}
+                      </span>
+                    </span>
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      {proposal.summary || "No summary provided."}
+                    </p>
+                    <div className="grid gap-3 text-sm text-[var(--ink-muted)] lg:grid-cols-2">
+                      <div>
+                        <p className="font-semibold text-[var(--ink)]">Purpose</p>
+                        <p className="mt-1">{proposal.purpose || "Not provided."}</p>
+                      </div>
+                      <div>
+                        <p className="font-semibold text-[var(--ink)]">Outcome</p>
+                        <p className="mt-1">{proposal.outcome || "Not provided."}</p>
+                      </div>
+                    </div>
+                    {proposal.beatOutline ? (
+                      <div>
+                        <p className="text-sm font-semibold text-[var(--ink)]">Beat outline</p>
+                        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-muted)]">
+                          {proposal.beatOutline}
+                        </p>
+                      </div>
+                    ) : null}
+                    <div className="flex flex-wrap gap-2">
+                      {proposal.location ? <Badge>{proposal.location}</Badge> : null}
+                      {proposal.timeLabel ? <Badge>{proposal.timeLabel}</Badge> : null}
+                      {proposal.povCharacterId ? <Badge>POV linked</Badge> : null}
+                    </div>
+                  </label>
+                ))
+              ) : (
+                <EmptyState
+                  title="No scene proposals yet"
+                  description="NovelForge returned notes, but no structured scene proposals were available to insert."
+                />
+              )}
+            </div>
+          </Panel>
+        ) : null}
 
         <div className="mt-6 flex min-h-0 flex-1 flex-col">
           <div className="flex items-center gap-2 text-sm font-medium text-[var(--ink-muted)]">

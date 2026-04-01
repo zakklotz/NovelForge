@@ -5,12 +5,15 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   AlertTriangle,
   BookOpen,
+  CheckSquare,
   FileText,
   ListOrdered,
+  RefreshCw,
   Save,
   Sparkles,
   Target,
   Users,
+  WandSparkles,
 } from "lucide-react";
 import {
   Badge,
@@ -23,11 +26,18 @@ import {
   Select,
   Textarea,
 } from "@/components/ui";
+import { useAiRuntime } from "@/hooks/useAiRuntime";
+import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { useUiStore } from "@/store/uiStore";
 import { cn, splitCommaSeparated } from "@/lib/utils";
-import type { ProjectSnapshot, Scene, Suggestion } from "@novelforge/domain";
+import type {
+  ProjectSnapshot,
+  Scene,
+  StructuredAiResponse,
+  Suggestion,
+} from "@novelforge/domain";
 
 type SceneWorkspaceTab = "overview" | "beats" | "draft";
 
@@ -201,13 +211,63 @@ function buildSceneSaveInput(
   };
 }
 
+function buildSceneWorkspaceAiContext(
+  scene: Scene,
+  planning: ScenePlanningState,
+  draft: string,
+  chapter: { id: string; title: string; summary: string; purpose: string } | null,
+  chapterScenes: Array<{
+    id: string;
+    orderIndex: number;
+    title: string;
+    summary: string;
+    outcome: string;
+  }>,
+  relatedCharacters: Array<{ id: string; name: string; role: string }>,
+) {
+  return JSON.stringify(
+    {
+      scenePlanningDraft: {
+        id: scene.id,
+        title: planning.title,
+        summary: planning.summary,
+        purpose: planning.purpose,
+        beatOutline: planning.beatOutline,
+        conflict: planning.conflict,
+        outcome: planning.outcome,
+        location: planning.location,
+        timeLabel: planning.timeLabel,
+        povCharacterId: planning.povCharacterId || null,
+        continuityTags: splitCommaSeparated(planning.continuityTags),
+        involvedCharacterIds: planning.involvedCharacterIds,
+        dependencySceneIds: planning.dependencySceneIds,
+      },
+      parentChapter: chapter,
+      nearbyScenes: chapterScenes.map((candidate) => ({
+        id: candidate.id,
+        orderIndex: candidate.orderIndex,
+        title: candidate.title,
+        summary: candidate.summary,
+        outcome: candidate.outcome,
+      })),
+      relatedCharacters,
+      currentDraft: draft,
+    },
+    null,
+    2,
+  );
+}
+
 export function SceneWorkspaceView() {
   const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
   const snapshotQuery = useProjectSnapshot();
+  const appSettingsQuery = useAppSettings();
+  const { runStructuredAiAction } = useAiRuntime();
   const { saveScene, saveManuscript } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const snapshot = snapshotQuery.data;
+  const appSettings = appSettingsQuery.data;
 
   const scene = snapshot?.scenes.find((item) => item.id === sceneId);
   const [workspaceTab, setWorkspaceTab] = useState<SceneWorkspaceTab>("overview");
@@ -223,6 +283,11 @@ export function SceneWorkspaceView() {
   );
   const [isDraftPersisting, setIsDraftPersisting] = useState(false);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
+  const [beatReview, setBeatReview] = useState<StructuredAiResponse | null>(null);
+  const [draftReview, setDraftReview] = useState<StructuredAiResponse | null>(null);
+  const [sceneAiError, setSceneAiError] = useState<string | null>(null);
+  const [isGeneratingBeats, setIsGeneratingBeats] = useState(false);
+  const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
   const currentSceneRef = useRef(scene ?? null);
   const queuedDraftRef = useRef<string | null>(null);
   const activeDraftSavePromiseRef = useRef<Promise<void> | null>(null);
@@ -262,6 +327,9 @@ export function SceneWorkspaceView() {
     setPersistedDraft(scene.manuscriptText);
     setIsDraftPersisting(false);
     setIsSavingWorkspace(false);
+    setBeatReview(null);
+    setDraftReview(null);
+    setSceneAiError(null);
   }, [scene?.id]);
 
   useEffect(() => {
@@ -534,6 +602,14 @@ export function SceneWorkspaceView() {
       ? "Saving..."
       : "Saving soon..."
     : "Saved";
+  const defaultProviderId = appSettings?.ai.defaultProvider;
+  const defaultModelId = defaultProviderId
+    ? appSettings.ai.providers[defaultProviderId].defaultModel
+    : "";
+  const hasConfiguredAi = defaultProviderId
+    ? appSettings?.ai.providers[defaultProviderId].hasApiKey &&
+      defaultModelId.trim().length > 0
+    : false;
 
   async function handleSaveMetadata() {
     if (!planningDirty) {
@@ -541,6 +617,127 @@ export function SceneWorkspaceView() {
     }
 
     await saveCurrentWorkspaceChanges();
+  }
+
+  async function handleGenerateBeats() {
+    if (!defaultProviderId || !defaultModelId.trim()) {
+      return;
+    }
+
+    setIsGeneratingBeats(true);
+    setSceneAiError(null);
+    setBeatReview(null);
+
+    try {
+      const response = await runStructuredAiAction({
+        projectId: currentScene.projectId,
+        providerId: defaultProviderId,
+        modelId: defaultModelId.trim(),
+        action: "scene-generate-beats",
+        sceneId: currentScene.id,
+        workspaceContext: buildSceneWorkspaceAiContext(
+          currentScene,
+          planning,
+          draft,
+          chapter
+            ? {
+                id: chapter.id,
+                title: chapter.title,
+                summary: chapter.summary,
+                purpose: chapter.purpose,
+              }
+            : null,
+          chapterScenes,
+          relatedCharacters.map((character) => ({
+            id: character.id,
+            name: character.name,
+            role: character.role,
+          })),
+        ),
+      });
+
+      setBeatReview(response);
+      setWorkspaceTab("beats");
+    } catch (error) {
+      setSceneAiError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not generate beats for this scene.",
+      );
+    } finally {
+      setIsGeneratingBeats(false);
+    }
+  }
+
+  function handleApplyBeatOutline() {
+    const nextBeatOutline = beatReview?.result.beatOutline.trim();
+    if (!nextBeatOutline) {
+      return;
+    }
+
+    updatePlanningField("beatOutline", nextBeatOutline);
+    setBeatReview(null);
+    setWorkspaceTab("beats");
+  }
+
+  async function handleExpandDraft() {
+    if (!defaultProviderId || !defaultModelId.trim() || !planning.beatOutline.trim()) {
+      return;
+    }
+
+    setIsGeneratingDraft(true);
+    setSceneAiError(null);
+    setDraftReview(null);
+
+    try {
+      const response = await runStructuredAiAction({
+        projectId: currentScene.projectId,
+        providerId: defaultProviderId,
+        modelId: defaultModelId.trim(),
+        action: "scene-expand-draft",
+        sceneId: currentScene.id,
+        workspaceContext: buildSceneWorkspaceAiContext(
+          currentScene,
+          planning,
+          draft,
+          chapter
+            ? {
+                id: chapter.id,
+                title: chapter.title,
+                summary: chapter.summary,
+                purpose: chapter.purpose,
+              }
+            : null,
+          chapterScenes,
+          relatedCharacters.map((character) => ({
+            id: character.id,
+            name: character.name,
+            role: character.role,
+          })),
+        ),
+      });
+
+      setDraftReview(response);
+      setWorkspaceTab("draft");
+    } catch (error) {
+      setSceneAiError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not expand the scene into rough draft prose.",
+      );
+    } finally {
+      setIsGeneratingDraft(false);
+    }
+  }
+
+  function handleApplyDraft() {
+    const nextDraft = draftReview?.result.manuscriptText || "<p></p>";
+    setDraft(nextDraft);
+    if (editor && editor.getHTML() !== nextDraft) {
+      editor.commands.setContent(nextDraft, false);
+    }
+    setDraftReview(null);
+    setWorkspaceTab("draft");
   }
 
   return (
@@ -702,6 +899,34 @@ export function SceneWorkspaceView() {
               ? `${chapter.title} · ${planning.timeLabel || "Time not set"}`
               : "Unassigned chapter"
           }
+          actions={
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => void handleGenerateBeats()}
+                disabled={!hasConfiguredAi || isGeneratingBeats}
+              >
+                {isGeneratingBeats ? (
+                  <RefreshCw className="size-4 animate-spin" />
+                ) : (
+                  <WandSparkles className="size-4" />
+                )}
+                Generate Beats
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => void handleExpandDraft()}
+                disabled={!hasConfiguredAi || !planning.beatOutline.trim() || isGeneratingDraft}
+              >
+                {isGeneratingDraft ? (
+                  <RefreshCw className="size-4 animate-spin" />
+                ) : (
+                  <Sparkles className="size-4" />
+                )}
+                Expand to Draft
+              </Button>
+            </div>
+          }
         />
         <div className="mt-6 flex flex-wrap gap-2 rounded-2xl bg-white/60 p-1">
           {[
@@ -728,6 +953,21 @@ export function SceneWorkspaceView() {
             );
           })}
         </div>
+
+        {!hasConfiguredAi ? (
+          <Panel className="mt-4 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+            <p className="text-sm text-[var(--warning)]">
+              Add a default AI provider and API key in Settings to generate beats or
+              rough draft prose from this scene workspace.
+            </p>
+          </Panel>
+        ) : null}
+
+        {sceneAiError ? (
+          <Panel className="mt-4 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+            <p className="text-sm text-[var(--danger)]">{sceneAiError}</p>
+          </Panel>
+        ) : null}
 
         {workspaceTab === "overview" ? (
           <div className="mt-6 grid gap-4 overflow-y-auto pr-1 lg:grid-cols-2">
@@ -790,6 +1030,35 @@ export function SceneWorkspaceView() {
                 </div>
               ))}
             </div>
+
+            {beatReview ? (
+              <Panel className="bg-white/75 shadow-none">
+                <SectionHeading
+                  title="Generated Beat Outline"
+                  description={
+                    beatReview.result.summary ||
+                    beatReview.assistantMessage ||
+                    "Review the generated beat outline before replacing the current one."
+                  }
+                  actions={
+                    <Button
+                      variant="secondary"
+                      onClick={handleApplyBeatOutline}
+                      disabled={!beatReview.result.beatOutline.trim()}
+                    >
+                      <CheckSquare className="size-4" />
+                      Replace Beats
+                    </Button>
+                  }
+                />
+
+                <div className="mt-4 rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
+                  <p className="whitespace-pre-wrap">
+                    {beatReview.result.beatOutline || "No beat outline returned."}
+                  </p>
+                </div>
+              </Panel>
+            ) : null}
           </div>
         ) : null}
 
@@ -802,6 +1071,40 @@ export function SceneWorkspaceView() {
             <div className="prose-editor mt-4 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
               <EditorContent editor={editor} />
             </div>
+
+            {draftReview ? (
+              <Panel className="mt-4 bg-white/75 shadow-none">
+                <SectionHeading
+                  title="Rough Draft Review"
+                  description={
+                    draftReview.result.summary ||
+                    draftReview.assistantMessage ||
+                    "Review the generated rough draft before replacing the current scene draft."
+                  }
+                  actions={
+                    <Button
+                      variant="secondary"
+                      onClick={handleApplyDraft}
+                      disabled={!draftReview.result.manuscriptText.trim()}
+                    >
+                      <CheckSquare className="size-4" />
+                      Replace Draft
+                    </Button>
+                  }
+                />
+
+                <div className="mt-4 rounded-2xl border border-black/8 bg-white px-5 py-5">
+                  <div
+                    className="prose prose-sm max-w-none text-[var(--ink)]"
+                    dangerouslySetInnerHTML={{
+                      __html:
+                        draftReview.result.manuscriptText ||
+                        "<p>No draft text returned.</p>",
+                    }}
+                  />
+                </div>
+              </Panel>
+            ) : null}
           </div>
         ) : null}
       </Panel>

@@ -98,6 +98,14 @@ export const scratchpadActionSchema = z.enum([
 
 export type ScratchpadAction = z.infer<typeof scratchpadActionSchema>;
 
+export const structuredAiActionSchema = z.enum([
+  "chapter-propose-scenes",
+  "scene-generate-beats",
+  "scene-expand-draft",
+]);
+
+export type StructuredAiAction = z.infer<typeof structuredAiActionSchema>;
+
 export const scratchpadRoleSchema = z.enum(["user", "assistant", "system"]);
 
 export type ScratchpadRole = z.infer<typeof scratchpadRoleSchema>;
@@ -218,6 +226,25 @@ export const scratchpadChatResponseSchema = z.object({
 export type ScratchpadChatResponse = z.infer<
   typeof scratchpadChatResponseSchema
 >;
+
+export const structuredAiResultSchema = z.object({
+  summary: z.string().default(""),
+  sceneProposals: z.array(sceneProposalSchema).default([]),
+  beatOutline: z.string().default(""),
+  manuscriptText: z.string().default(""),
+});
+
+export type StructuredAiResult = z.infer<typeof structuredAiResultSchema>;
+
+export const structuredAiResponseSchema = z.object({
+  providerId: aiProviderIdSchema,
+  modelId: z.string().min(1),
+  action: structuredAiActionSchema,
+  assistantMessage: z.string().default(""),
+  result: structuredAiResultSchema,
+});
+
+export type StructuredAiResponse = z.infer<typeof structuredAiResponseSchema>;
 
 export const applyScratchpadResultOutputSchema = z.object({
   applied: z.array(domainObjectRefSchema).default([]),

@@ -100,6 +100,7 @@ pub fn run() {
             commands::list_recommended_models,
             commands::test_provider_connection,
             commands::run_scratchpad_chat,
+            commands::run_structured_ai_action,
             commands::apply_scratchpad_result,
         ])
         .setup(|app| {
