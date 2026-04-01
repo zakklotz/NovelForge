@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -25,10 +25,43 @@ import {
 } from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
+import { useUiStore } from "@/store/uiStore";
 import { cn, splitCommaSeparated } from "@/lib/utils";
-import type { ProjectSnapshot, Suggestion } from "@novelforge/domain";
+import type { ProjectSnapshot, Scene, Suggestion } from "@novelforge/domain";
 
 type SceneWorkspaceTab = "overview" | "beats" | "draft";
+
+interface ScenePlanningState {
+  title: string;
+  summary: string;
+  purpose: string;
+  beatOutline: string;
+  conflict: string;
+  outcome: string;
+  location: string;
+  timeLabel: string;
+  povCharacterId: string;
+  continuityTags: string;
+  involvedCharacterIds: string[];
+  dependencySceneIds: string[];
+}
+
+function emptyPlanningState(): ScenePlanningState {
+  return {
+    title: "",
+    summary: "",
+    purpose: "",
+    beatOutline: "",
+    conflict: "",
+    outcome: "",
+    location: "",
+    timeLabel: "",
+    povCharacterId: "",
+    continuityTags: "",
+    involvedCharacterIds: [],
+    dependencySceneIds: [],
+  };
+}
 
 function findRelatedSuggestions(sceneId: string, suggestions: Suggestion[]) {
   return suggestions.filter(
@@ -71,72 +104,135 @@ function areListsEqual(left: string[], right: string[]) {
   );
 }
 
+function buildScenePlanningState(scene: Scene): ScenePlanningState {
+  return {
+    title: scene.title,
+    summary: scene.summary,
+    purpose: scene.purpose,
+    beatOutline: scene.beatOutline,
+    conflict: scene.conflict,
+    outcome: scene.outcome,
+    location: scene.location,
+    timeLabel: scene.timeLabel,
+    povCharacterId: scene.povCharacterId ?? "",
+    continuityTags: scene.continuityTags.join(", "),
+    involvedCharacterIds: [...scene.involvedCharacterIds],
+    dependencySceneIds: [...scene.dependencySceneIds],
+  };
+}
+
+function arePlanningStatesEqual(
+  left: ScenePlanningState,
+  right: ScenePlanningState,
+) {
+  return (
+    left.title === right.title &&
+    left.summary === right.summary &&
+    left.purpose === right.purpose &&
+    left.beatOutline === right.beatOutline &&
+    left.conflict === right.conflict &&
+    left.outcome === right.outcome &&
+    left.location === right.location &&
+    left.timeLabel === right.timeLabel &&
+    left.povCharacterId === right.povCharacterId &&
+    areListsEqual(splitCommaSeparated(left.continuityTags), splitCommaSeparated(right.continuityTags)) &&
+    areListsEqual(left.involvedCharacterIds, right.involvedCharacterIds) &&
+    areListsEqual(left.dependencySceneIds, right.dependencySceneIds)
+  );
+}
+
+function getPlanningChangedFields(
+  planning: ScenePlanningState,
+  persistedPlanning: ScenePlanningState,
+) {
+  return [
+    planning.title !== persistedPlanning.title ? "title" : null,
+    planning.summary !== persistedPlanning.summary ? "summary" : null,
+    planning.purpose !== persistedPlanning.purpose ? "purpose" : null,
+    planning.beatOutline !== persistedPlanning.beatOutline ? "beatOutline" : null,
+    planning.conflict !== persistedPlanning.conflict ? "conflict" : null,
+    planning.outcome !== persistedPlanning.outcome ? "outcome" : null,
+    planning.location !== persistedPlanning.location ? "location" : null,
+    planning.timeLabel !== persistedPlanning.timeLabel ? "timeLabel" : null,
+    (planning.povCharacterId || null) !== (persistedPlanning.povCharacterId || null)
+      ? "povCharacterId"
+      : null,
+    !areListsEqual(
+      splitCommaSeparated(planning.continuityTags),
+      splitCommaSeparated(persistedPlanning.continuityTags),
+    )
+      ? "continuityTags"
+      : null,
+    !areListsEqual(
+      planning.involvedCharacterIds,
+      persistedPlanning.involvedCharacterIds,
+    )
+      ? "involvedCharacterIds"
+      : null,
+    !areListsEqual(
+      planning.dependencySceneIds,
+      persistedPlanning.dependencySceneIds,
+    )
+      ? "dependencySceneIds"
+      : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function buildSceneSaveInput(
+  scene: Scene,
+  planning: ScenePlanningState,
+  draft: string,
+) {
+  return {
+    ...scene,
+    title: planning.title,
+    summary: planning.summary,
+    purpose: planning.purpose,
+    beatOutline: planning.beatOutline,
+    conflict: planning.conflict,
+    outcome: planning.outcome,
+    location: planning.location,
+    timeLabel: planning.timeLabel,
+    povCharacterId: planning.povCharacterId || null,
+    continuityTags: splitCommaSeparated(planning.continuityTags),
+    involvedCharacterIds: planning.involvedCharacterIds,
+    dependencySceneIds: planning.dependencySceneIds,
+    manuscriptText: draft,
+  };
+}
+
 export function SceneWorkspaceView() {
   const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
   const snapshotQuery = useProjectSnapshot();
   const { saveScene, saveManuscript } = useProjectRuntime();
+  const setSceneWorkspaceSession = useUiStore(
+    (state) => state.setSceneWorkspaceSession,
+  );
   const snapshot = snapshotQuery.data;
 
   const scene = snapshot?.scenes.find((item) => item.id === sceneId);
-  const chapter = snapshot?.chapters.find((item) => item.id === scene?.chapterId);
-  const relatedCharacters =
-    snapshot?.characters.filter(
-      (character) =>
-        scene?.involvedCharacterIds.includes(character.id) ||
-        scene?.povCharacterId === character.id,
-    ) ?? [];
-  const relatedSuggestions = scene
-    ? findRelatedSuggestions(scene.id, snapshot?.suggestions ?? [])
-    : [];
-  const chapterScenes =
-    snapshot?.scenes
-      .filter((item) => item.chapterId === scene?.chapterId)
-      .sort((left, right) => left.orderIndex - right.orderIndex) ?? [];
-  const storyOrderedScenes = snapshot ? buildStoryOrderedScenes(snapshot) : [];
-  const chapterById = new Map(snapshot?.chapters.map((item) => [item.id, item]) ?? []);
-
   const [workspaceTab, setWorkspaceTab] = useState<SceneWorkspaceTab>("overview");
+  const [planning, setPlanning] = useState<ScenePlanningState>(() =>
+    scene ? buildScenePlanningState(scene) : emptyPlanningState(),
+  );
+  const [persistedPlanning, setPersistedPlanning] = useState<ScenePlanningState>(() =>
+    scene ? buildScenePlanningState(scene) : emptyPlanningState(),
+  );
   const [draft, setDraft] = useState(scene?.manuscriptText ?? "<p></p>");
-  const [title, setTitle] = useState(scene?.title ?? "");
-  const [summary, setSummary] = useState(scene?.summary ?? "");
-  const [purpose, setPurpose] = useState(scene?.purpose ?? "");
-  const [beatOutline, setBeatOutline] = useState(scene?.beatOutline ?? "");
-  const [conflict, setConflict] = useState(scene?.conflict ?? "");
-  const [outcome, setOutcome] = useState(scene?.outcome ?? "");
-  const [location, setLocation] = useState(scene?.location ?? "");
-  const [timeLabel, setTimeLabel] = useState(scene?.timeLabel ?? "");
-  const [povCharacterId, setPovCharacterId] = useState(scene?.povCharacterId ?? "");
-  const [continuityTags, setContinuityTags] = useState(
-    scene?.continuityTags.join(", ") ?? "",
+  const [persistedDraft, setPersistedDraft] = useState(
+    scene?.manuscriptText ?? "<p></p>",
   );
-  const [involvedCharacterIds, setInvolvedCharacterIds] = useState<string[]>(
-    scene?.involvedCharacterIds ?? [],
-  );
-  const [dependencySceneIds, setDependencySceneIds] = useState<string[]>(
-    scene?.dependencySceneIds ?? [],
-  );
+  const [isDraftPersisting, setIsDraftPersisting] = useState(false);
+  const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
+  const currentSceneRef = useRef(scene ?? null);
+  const queuedDraftRef = useRef<string | null>(null);
+  const activeDraftSavePromiseRef = useRef<Promise<void> | null>(null);
+  const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
 
   useEffect(() => {
-    if (!scene) {
-      return;
-    }
-
-    setWorkspaceTab("overview");
-    setDraft(scene.manuscriptText);
-    setTitle(scene.title);
-    setSummary(scene.summary);
-    setPurpose(scene.purpose);
-    setBeatOutline(scene.beatOutline);
-    setConflict(scene.conflict);
-    setOutcome(scene.outcome);
-    setLocation(scene.location);
-    setTimeLabel(scene.timeLabel);
-    setPovCharacterId(scene.povCharacterId ?? "");
-    setContinuityTags(scene.continuityTags.join(", "));
-    setInvolvedCharacterIds(scene.involvedCharacterIds);
-    setDependencySceneIds(scene.dependencySceneIds);
-  }, [scene?.id]);
+    currentSceneRef.current = scene ?? null;
+  }, [scene]);
 
   const editor = useEditor({
     extensions: [StarterKit],
@@ -155,6 +251,22 @@ export function SceneWorkspaceView() {
   });
 
   useEffect(() => {
+    if (!scene) {
+      return;
+    }
+
+    const nextPlanning = buildScenePlanningState(scene);
+    queuedDraftRef.current = null;
+    setWorkspaceTab("overview");
+    setPlanning(nextPlanning);
+    setPersistedPlanning(nextPlanning);
+    setDraft(scene.manuscriptText);
+    setPersistedDraft(scene.manuscriptText);
+    setIsDraftPersisting(false);
+    setIsSavingWorkspace(false);
+  }, [scene?.id]);
+
+  useEffect(() => {
     if (!editor || !scene) {
       return;
     }
@@ -162,23 +274,221 @@ export function SceneWorkspaceView() {
     if (editor.getHTML() !== scene.manuscriptText) {
       editor.commands.setContent(scene.manuscriptText, false);
     }
-  }, [editor, scene?.id, scene?.manuscriptText]);
+  }, [editor, scene?.id]);
 
   useEffect(() => {
-    if (!scene || draft === scene.manuscriptText) {
+    if (!scene) {
+      return;
+    }
+
+    const nextPlanning = buildScenePlanningState(scene);
+    setPersistedPlanning((currentPlanning) =>
+      arePlanningStatesEqual(currentPlanning, nextPlanning)
+        ? currentPlanning
+        : nextPlanning,
+    );
+    setPersistedDraft((currentDraft) =>
+      currentDraft === scene.manuscriptText ? currentDraft : scene.manuscriptText,
+    );
+  }, [scene]);
+
+  const planningChangedFields = scene
+    ? getPlanningChangedFields(planning, persistedPlanning)
+    : [];
+  const planningDirty = planningChangedFields.length > 0;
+  const draftDirty = Boolean(scene) && draft !== persistedDraft;
+  const dirtyAreas = [
+    planningDirty ? "planning" : null,
+    draftDirty ? "draft" : null,
+  ].filter((value): value is "planning" | "draft" => Boolean(value));
+
+  function updatePlanningField<Key extends keyof ScenePlanningState>(
+    key: Key,
+    value: ScenePlanningState[Key],
+  ) {
+    setPlanning((currentPlanning) =>
+      Object.is(currentPlanning[key], value)
+        ? currentPlanning
+        : {
+            ...currentPlanning,
+            [key]: value,
+          },
+    );
+  }
+
+  function drainDraftSaveQueue() {
+    if (activeDraftSavePromiseRef.current) {
+      return activeDraftSavePromiseRef.current;
+    }
+
+    const savePromise = (async () => {
+      setIsDraftPersisting(true);
+
+      try {
+        while (queuedDraftRef.current !== null) {
+          const manuscriptText = queuedDraftRef.current;
+          queuedDraftRef.current = null;
+
+          const currentScene = currentSceneRef.current;
+          if (!currentScene) {
+            return;
+          }
+
+          await saveManuscript({
+            projectId: currentScene.projectId,
+            sceneId: currentScene.id,
+            manuscriptText,
+          });
+        }
+      } finally {
+        activeDraftSavePromiseRef.current = null;
+        setIsDraftPersisting(false);
+      }
+    })();
+
+    activeDraftSavePromiseRef.current = savePromise;
+    return savePromise;
+  }
+
+  function queueDraftPersistence(manuscriptText: string) {
+    queuedDraftRef.current = manuscriptText;
+    void drainDraftSaveQueue().catch(() => undefined);
+  }
+
+  async function flushDraftPersistence(manuscriptText: string) {
+    queuedDraftRef.current = manuscriptText;
+    await drainDraftSaveQueue();
+  }
+
+  async function waitForDraftPersistenceToSettle() {
+    if (!activeDraftSavePromiseRef.current) {
+      return;
+    }
+
+    try {
+      await activeDraftSavePromiseRef.current;
+    } catch {
+      // Keep local dirty state intact and let explicit save/discard decide next steps.
+    }
+  }
+
+  useEffect(() => {
+    if (!scene || !draftDirty) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      saveManuscript({
-        projectId: scene.projectId,
-        sceneId: scene.id,
-        manuscriptText: draft,
-      }).catch(() => undefined);
+      queueDraftPersistence(draft);
     }, 1200);
 
     return () => window.clearTimeout(timeoutId);
-  }, [draft, saveManuscript, scene]);
+  }, [draft, draftDirty, scene?.id]);
+
+  async function saveCurrentWorkspaceChanges() {
+    if (workspaceSavePromiseRef.current) {
+      return workspaceSavePromiseRef.current;
+    }
+
+    const savePromise = (async () => {
+      const currentScene = currentSceneRef.current;
+      if (!currentScene) {
+        return;
+      }
+
+      setIsSavingWorkspace(true);
+
+      try {
+        if (planningDirty) {
+          await waitForDraftPersistenceToSettle();
+          await saveScene(
+            buildSceneSaveInput(currentScene, planning, draft),
+            {
+              id: crypto.randomUUID(),
+              projectId: currentScene.projectId,
+              occurredAt: new Date().toISOString(),
+              type: "scene.updated",
+              sceneId: currentScene.id,
+              changedFields: planningChangedFields,
+            },
+          );
+          return;
+        }
+
+        if (draftDirty) {
+          await flushDraftPersistence(draft);
+        }
+      } finally {
+        setIsSavingWorkspace(false);
+      }
+    })();
+
+    workspaceSavePromiseRef.current = savePromise.finally(() => {
+      workspaceSavePromiseRef.current = null;
+    });
+
+    return workspaceSavePromiseRef.current;
+  }
+
+  async function discardCurrentWorkspaceChanges() {
+    const currentScene = currentSceneRef.current;
+    if (!currentScene) {
+      return;
+    }
+
+    const nextPlanning = persistedPlanning;
+    const nextDraft = persistedDraft;
+    const shouldRestorePersistedDraft = Boolean(activeDraftSavePromiseRef.current);
+
+    queuedDraftRef.current = null;
+    await waitForDraftPersistenceToSettle();
+
+    if (shouldRestorePersistedDraft) {
+      await saveManuscript({
+        projectId: currentScene.projectId,
+        sceneId: currentScene.id,
+        manuscriptText: nextDraft,
+      });
+    }
+
+    setPlanning(nextPlanning);
+    setDraft(nextDraft);
+    if (editor && editor.getHTML() !== nextDraft) {
+      editor.commands.setContent(nextDraft, false);
+    }
+  }
+
+  useLayoutEffect(() => {
+    if (!scene) {
+      setSceneWorkspaceSession(null);
+      return;
+    }
+
+    setSceneWorkspaceSession({
+      sceneId: scene.id,
+      sceneTitle: planning.title.trim() || scene.title,
+      dirtyAreas,
+      saveChanges: saveCurrentWorkspaceChanges,
+      discardChanges: discardCurrentWorkspaceChanges,
+    });
+  }, [
+    dirtyAreas,
+    planning.title,
+    scene,
+    setSceneWorkspaceSession,
+  ]);
+
+  useLayoutEffect(() => {
+    if (!scene) {
+      return;
+    }
+
+    const currentSceneId = scene.id;
+    return () => {
+      if (useUiStore.getState().sceneWorkspaceSession?.sceneId === currentSceneId) {
+        useUiStore.getState().setSceneWorkspaceSession(null);
+      }
+    };
+  }, [scene?.id]);
 
   if (!snapshot || !scene) {
     return (
@@ -192,72 +502,45 @@ export function SceneWorkspaceView() {
   }
 
   const currentScene = scene;
-  const normalizedContinuityTags = splitCommaSeparated(continuityTags);
-  const metadataChangedFields = [
-    title !== currentScene.title ? "title" : null,
-    summary !== currentScene.summary ? "summary" : null,
-    purpose !== currentScene.purpose ? "purpose" : null,
-    beatOutline !== currentScene.beatOutline ? "beatOutline" : null,
-    conflict !== currentScene.conflict ? "conflict" : null,
-    outcome !== currentScene.outcome ? "outcome" : null,
-    location !== currentScene.location ? "location" : null,
-    timeLabel !== currentScene.timeLabel ? "timeLabel" : null,
-    (povCharacterId || null) !== currentScene.povCharacterId ? "povCharacterId" : null,
-    !areListsEqual(normalizedContinuityTags, currentScene.continuityTags)
-      ? "continuityTags"
-      : null,
-    !areListsEqual(involvedCharacterIds, currentScene.involvedCharacterIds)
-      ? "involvedCharacterIds"
-      : null,
-    !areListsEqual(dependencySceneIds, currentScene.dependencySceneIds)
-      ? "dependencySceneIds"
-      : null,
-  ].filter((value): value is string => Boolean(value));
-  const metadataDirty = metadataChangedFields.length > 0;
+  const chapter = snapshot.chapters.find((item) => item.id === currentScene.chapterId);
+  const relatedCharacters = snapshot.characters.filter(
+    (character) =>
+      planning.involvedCharacterIds.includes(character.id) ||
+      planning.povCharacterId === character.id,
+  );
+  const relatedSuggestions = findRelatedSuggestions(
+    currentScene.id,
+    snapshot.suggestions ?? [],
+  );
+  const chapterScenes = snapshot.scenes
+    .filter((item) => item.chapterId === currentScene.chapterId)
+    .sort((left, right) => left.orderIndex - right.orderIndex);
+  const storyOrderedScenes = buildStoryOrderedScenes(snapshot);
+  const chapterById = new Map(snapshot.chapters.map((item) => [item.id, item]));
   const scenePosition = chapterScenes.findIndex((item) => item.id === currentScene.id);
   const structuralPrompts = [
-    purpose
-      ? `Scene purpose: ${purpose}`
+    planning.purpose
+      ? `Scene purpose: ${planning.purpose}`
       : "Clarify why this scene belongs in the story at all.",
-    beatOutline.trim()
+    planning.beatOutline.trim()
       ? "Check that each beat changes pressure, information, or emotional position."
       : "Sketch the scene in 3 to 5 beats before polishing the prose.",
-    outcome
-      ? `Exit change: ${outcome}`
+    planning.outcome
+      ? `Exit change: ${planning.outcome}`
       : "Decide what is different by the end of the scene.",
   ];
+  const draftStatusLabel = draftDirty
+    ? isDraftPersisting
+      ? "Saving..."
+      : "Saving soon..."
+    : "Saved";
 
   async function handleSaveMetadata() {
-    if (!metadataDirty) {
+    if (!planningDirty) {
       return;
     }
 
-    await saveScene(
-      {
-        ...currentScene,
-        title,
-        summary,
-        purpose,
-        beatOutline,
-        conflict,
-        outcome,
-        location,
-        timeLabel,
-        povCharacterId: povCharacterId || null,
-        continuityTags: normalizedContinuityTags,
-        involvedCharacterIds,
-        dependencySceneIds,
-        manuscriptText: draft,
-      },
-      {
-        id: crypto.randomUUID(),
-        projectId: currentScene.projectId,
-        occurredAt: new Date().toISOString(),
-        type: "scene.updated",
-        sceneId: currentScene.id,
-        changedFields: metadataChangedFields,
-      },
-    );
+    await saveCurrentWorkspaceChanges();
   }
 
   return (
@@ -267,20 +550,30 @@ export function SceneWorkspaceView() {
           title="Scene Frame"
           description="Keep the scene's title, cast pressure, and continuity anchored while you plan and draft."
           actions={
-            <Button onClick={handleSaveMetadata} disabled={!metadataDirty}>
+            <Button
+              onClick={() => void handleSaveMetadata()}
+              disabled={!planningDirty || isSavingWorkspace}
+            >
               <Save className="size-4" />
-              {metadataDirty ? "Save Planning" : "Planning Saved"}
+              {isSavingWorkspace
+                ? "Saving..."
+                : planningDirty
+                  ? "Save Planning"
+                  : "Planning Saved"}
             </Button>
           }
         />
         <p className="mt-4 text-sm text-[var(--ink-muted)]">
-          {metadataDirty
+          {planningDirty
             ? "Planning changes are local until you save them."
             : "Planning fields are in sync with the project snapshot."}
         </p>
         <div className="mt-6 grid gap-4">
           <Field label="Title">
-            <Input value={title} onChange={(event) => setTitle(event.target.value)} />
+            <Input
+              value={planning.title}
+              onChange={(event) => updatePlanningField("title", event.target.value)}
+            />
           </Field>
           <Field label="Story Slot">
             <Input
@@ -294,8 +587,10 @@ export function SceneWorkspaceView() {
           </Field>
           <Field label="POV Character">
             <Select
-              value={povCharacterId}
-              onChange={(event) => setPovCharacterId(event.target.value)}
+              value={planning.povCharacterId}
+              onChange={(event) =>
+                updatePlanningField("povCharacterId", event.target.value)
+              }
             >
               <option value="">No POV selected</option>
               {snapshot.characters.map((character) => (
@@ -307,16 +602,28 @@ export function SceneWorkspaceView() {
           </Field>
           <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
             <Field label="Location">
-              <Input value={location} onChange={(event) => setLocation(event.target.value)} />
+              <Input
+                value={planning.location}
+                onChange={(event) =>
+                  updatePlanningField("location", event.target.value)
+                }
+              />
             </Field>
             <Field label="Time">
-              <Input value={timeLabel} onChange={(event) => setTimeLabel(event.target.value)} />
+              <Input
+                value={planning.timeLabel}
+                onChange={(event) =>
+                  updatePlanningField("timeLabel", event.target.value)
+                }
+              />
             </Field>
           </div>
           <Field label="Continuity Tags" hint="Comma-separated">
             <Input
-              value={continuityTags}
-              onChange={(event) => setContinuityTags(event.target.value)}
+              value={planning.continuityTags}
+              onChange={(event) =>
+                updatePlanningField("continuityTags", event.target.value)
+              }
             />
           </Field>
           <Field label="Involved Characters">
@@ -328,13 +635,16 @@ export function SceneWorkspaceView() {
                 >
                   <input
                     type="checkbox"
-                    checked={involvedCharacterIds.includes(character.id)}
+                    checked={planning.involvedCharacterIds.includes(character.id)}
                     onChange={(event) =>
-                      setInvolvedCharacterIds((current) =>
-                        event.target.checked
-                          ? [...current, character.id]
-                          : current.filter((value) => value !== character.id),
-                      )
+                      setPlanning((currentPlanning) => ({
+                        ...currentPlanning,
+                        involvedCharacterIds: event.target.checked
+                          ? [...currentPlanning.involvedCharacterIds, character.id]
+                          : currentPlanning.involvedCharacterIds.filter(
+                              (value) => value !== character.id,
+                            ),
+                      }))
                     }
                   />
                   {character.name}
@@ -359,13 +669,16 @@ export function SceneWorkspaceView() {
                       <span className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={dependencySceneIds.includes(candidate.id)}
+                          checked={planning.dependencySceneIds.includes(candidate.id)}
                           onChange={(event) =>
-                            setDependencySceneIds((current) =>
-                              event.target.checked
-                                ? [...current, candidate.id]
-                                : current.filter((value) => value !== candidate.id),
-                            )
+                            setPlanning((currentPlanning) => ({
+                              ...currentPlanning,
+                              dependencySceneIds: event.target.checked
+                                ? [...currentPlanning.dependencySceneIds, candidate.id]
+                                : currentPlanning.dependencySceneIds.filter(
+                                    (value) => value !== candidate.id,
+                                  ),
+                            }))
                           }
                         />
                         {candidate.title}
@@ -383,10 +696,10 @@ export function SceneWorkspaceView() {
 
       <Panel className="flex min-h-0 flex-col">
         <SectionHeading
-          title={title || currentScene.title}
+          title={planning.title || currentScene.title}
           description={
             chapter
-              ? `${chapter.title} · ${timeLabel || "Time not set"}`
+              ? `${chapter.title} · ${planning.timeLabel || "Time not set"}`
               : "Unassigned chapter"
           }
         />
@@ -421,32 +734,32 @@ export function SceneWorkspaceView() {
             <Field label="Summary" className="lg:col-span-2">
               <Textarea
                 className="min-h-28"
-                value={summary}
-                onChange={(event) => setSummary(event.target.value)}
+                value={planning.summary}
+                onChange={(event) => updatePlanningField("summary", event.target.value)}
                 placeholder="What happens in this scene at a high level?"
               />
             </Field>
             <Field label="Purpose">
               <Textarea
                 className="min-h-32"
-                value={purpose}
-                onChange={(event) => setPurpose(event.target.value)}
+                value={planning.purpose}
+                onChange={(event) => updatePlanningField("purpose", event.target.value)}
                 placeholder="Why does this scene exist in the story?"
               />
             </Field>
             <Field label="Outcome">
               <Textarea
                 className="min-h-32"
-                value={outcome}
-                onChange={(event) => setOutcome(event.target.value)}
+                value={planning.outcome}
+                onChange={(event) => updatePlanningField("outcome", event.target.value)}
                 placeholder="What changes by the end of the scene?"
               />
             </Field>
             <Field label="Conflict" className="lg:col-span-2">
               <Textarea
                 className="min-h-32"
-                value={conflict}
-                onChange={(event) => setConflict(event.target.value)}
+                value={planning.conflict}
+                onChange={(event) => updatePlanningField("conflict", event.target.value)}
                 placeholder="What pressure, opposition, or contradiction drives the scene?"
               />
             </Field>
@@ -458,8 +771,10 @@ export function SceneWorkspaceView() {
             <Field label="Beat Outline" hint="One beat per line">
               <Textarea
                 className="min-h-[18rem] flex-1"
-                value={beatOutline}
-                onChange={(event) => setBeatOutline(event.target.value)}
+                value={planning.beatOutline}
+                onChange={(event) =>
+                  updatePlanningField("beatOutline", event.target.value)
+                }
                 placeholder={
                   "Opening image or status quo\nPressure enters\nTurn or reveal\nDecision\nExit state"
                 }
@@ -482,7 +797,7 @@ export function SceneWorkspaceView() {
           <div className="mt-6 flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between gap-4 text-sm text-[var(--ink-muted)]">
               <span>Draft prose stays separate from scene planning and autosaves after a pause.</span>
-              <span>{draft === currentScene.manuscriptText ? "Saved" : "Saving soon..."}</span>
+              <span>{draftStatusLabel}</span>
             </div>
             <div className="prose-editor mt-4 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
               <EditorContent editor={editor} />
@@ -590,7 +905,7 @@ export function SceneWorkspaceView() {
                           {character.role || "Role not defined yet."}
                         </p>
                       </div>
-                      {currentScene.povCharacterId === character.id ? (
+                      {planning.povCharacterId === character.id ? (
                         <Badge tone="accent">POV</Badge>
                       ) : null}
                     </div>

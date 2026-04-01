@@ -89,6 +89,9 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const snapshotQuery = useProjectSnapshot();
   const navigate = useNavigate();
   const currentProjectId = useUiStore((state) => state.currentProjectId);
+  const setPendingSceneWorkspaceAction = useUiStore(
+    (state) => state.setPendingSceneWorkspaceAction,
+  );
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { createProject, openProject, restoreLastProject, closeProject } =
     useProjectRuntime();
@@ -103,76 +106,98 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     await navigate({ to: targetRoute });
   });
 
-  const handleCreateProject = useEffectEvent(async () => {
-    setIsStartingProject(true);
-    setStartupError(null);
+  const runProtectedProjectAction = useEffectEvent(
+    async (targetLabel: string, action: () => Promise<void>) => {
+      const session = useUiStore.getState().sceneWorkspaceSession;
 
-    try {
-      const normalizedTitle = projectTitle.trim() || "Untitled Novel";
-      const path = await save({
-        defaultPath: `${normalizedTitle.replace(/\s+/g, "-").toLowerCase()}.novelforge`,
-        filters: [{ name: "NovelForge Project", extensions: ["novelforge"] }],
-      });
-
-      if (!path) {
+      if (session && session.dirtyAreas.length > 0) {
+        setPendingSceneWorkspaceAction({
+          targetLabel,
+          runAction: action,
+        });
         return;
       }
 
-      const input: CreateProjectInput = {
-        title: normalizedTitle,
-        logline: "",
-        path,
-      };
+      await action();
+    },
+  );
 
-      const snapshot = await createProject(input);
-      setProjectTitle("");
-      await openWorkspace(snapshot.projectState.lastRoute);
-    } catch (error) {
-      setStartupError(
-        error instanceof Error
-          ? error.message
-          : "NovelForge could not create the project.",
-      );
-    } finally {
-      setIsStartingProject(false);
-      setIsRestoring(false);
-    }
+  const handleCreateProject = useEffectEvent(async () => {
+    await runProtectedProjectAction("create a new project", async () => {
+      setIsStartingProject(true);
+      setStartupError(null);
+
+      try {
+        const normalizedTitle = projectTitle.trim() || "Untitled Novel";
+        const path = await save({
+          defaultPath: `${normalizedTitle.replace(/\s+/g, "-").toLowerCase()}.novelforge`,
+          filters: [{ name: "NovelForge Project", extensions: ["novelforge"] }],
+        });
+
+        if (!path) {
+          return;
+        }
+
+        const input: CreateProjectInput = {
+          title: normalizedTitle,
+          logline: "",
+          path,
+        };
+
+        const snapshot = await createProject(input);
+        setProjectTitle("");
+        await openWorkspace(snapshot.projectState.lastRoute);
+      } catch (error) {
+        setStartupError(
+          error instanceof Error
+            ? error.message
+            : "NovelForge could not create the project.",
+        );
+      } finally {
+        setIsStartingProject(false);
+        setIsRestoring(false);
+      }
+    });
   });
 
   const handleOpenProject = useEffectEvent(async () => {
-    setIsStartingProject(true);
-    setStartupError(null);
+    await runProtectedProjectAction("open another project", async () => {
+      setIsStartingProject(true);
+      setStartupError(null);
 
-    try {
-      const path = await open({
-        multiple: false,
-        filters: [
-          { name: "NovelForge Project", extensions: ["novelforge", "sqlite", "db"] },
-        ],
-      });
+      try {
+        const path = await open({
+          multiple: false,
+          filters: [
+            { name: "NovelForge Project", extensions: ["novelforge", "sqlite", "db"] },
+          ],
+        });
 
-      if (!path || Array.isArray(path)) {
-        return;
+        if (!path || Array.isArray(path)) {
+          return;
+        }
+
+        const snapshot = await openProject({ path });
+        await openWorkspace(snapshot.projectState.lastRoute);
+      } catch (error) {
+        setStartupError(
+          error instanceof Error
+            ? error.message
+            : "NovelForge could not open that project file.",
+        );
+      } finally {
+        setIsStartingProject(false);
+        setIsRestoring(false);
       }
-
-      const snapshot = await openProject({ path });
-      await openWorkspace(snapshot.projectState.lastRoute);
-    } catch (error) {
-      setStartupError(
-        error instanceof Error
-          ? error.message
-          : "NovelForge could not open that project file.",
-      );
-    } finally {
-      setIsStartingProject(false);
-      setIsRestoring(false);
-    }
+    });
   });
 
   const handleCloseProject = useEffectEvent(async () => {
-    await closeProject();
-    setStartupError(null);
-    await navigate({ to: "/" });
+    await runProtectedProjectAction("close the current project", async () => {
+      await closeProject();
+      setStartupError(null);
+      await navigate({ to: "/" });
+    });
   });
 
   const handleOpenSettings = useEffectEvent(async () => {

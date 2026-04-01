@@ -18,6 +18,7 @@ import { tauriApi } from "@/lib/tauri";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { useUiStore } from "@/store/uiStore";
+import { SceneWorkspaceLeavePrompt } from "./SceneWorkspaceLeavePrompt";
 
 type StoryDomain = "chapters" | "scenes" | "characters" | "suggestions";
 
@@ -528,6 +529,7 @@ export function AppShell({
           <main className="min-h-0 flex-1">{children}</main>
         </div>
       </div>
+      <SceneWorkspaceLeavePrompt />
     </div>
   );
 }

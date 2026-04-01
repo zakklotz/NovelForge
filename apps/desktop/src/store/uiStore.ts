@@ -1,6 +1,21 @@
 import { create } from "zustand";
 import type { DomainEvent } from "@novelforge/domain";
 
+export type SceneWorkspaceDirtyArea = "planning" | "draft";
+
+export interface SceneWorkspaceSession {
+  sceneId: string;
+  sceneTitle: string;
+  dirtyAreas: SceneWorkspaceDirtyArea[];
+  saveChanges: () => Promise<void>;
+  discardChanges: () => Promise<void>;
+}
+
+export interface PendingSceneWorkspaceAction {
+  targetLabel: string;
+  runAction: () => Promise<void>;
+}
+
 interface UiState {
   currentProjectId: string | null;
   selectedChapterId: string | null;
@@ -8,6 +23,8 @@ interface UiState {
   searchText: string;
   analysisQueue: DomainEvent[];
   isAnalyzing: boolean;
+  sceneWorkspaceSession: SceneWorkspaceSession | null;
+  pendingSceneWorkspaceAction: PendingSceneWorkspaceAction | null;
   setCurrentProjectId: (projectId: string | null) => void;
   setSelectedChapterId: (chapterId: string | null) => void;
   setSelectedCharacterId: (characterId: string | null) => void;
@@ -15,6 +32,10 @@ interface UiState {
   enqueueAnalysis: (event: DomainEvent) => void;
   dequeueAnalysis: () => void;
   setIsAnalyzing: (isAnalyzing: boolean) => void;
+  setSceneWorkspaceSession: (session: SceneWorkspaceSession | null) => void;
+  setPendingSceneWorkspaceAction: (
+    action: PendingSceneWorkspaceAction | null,
+  ) => void;
   resetUi: () => void;
 }
 
@@ -25,6 +46,8 @@ const initialState = {
   searchText: "",
   analysisQueue: [],
   isAnalyzing: false,
+  sceneWorkspaceSession: null,
+  pendingSceneWorkspaceAction: null,
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -38,5 +61,9 @@ export const useUiStore = create<UiState>((set) => ({
   dequeueAnalysis: () =>
     set((state) => ({ analysisQueue: state.analysisQueue.slice(1) })),
   setIsAnalyzing: (isAnalyzing) => set({ isAnalyzing }),
+  setSceneWorkspaceSession: (sceneWorkspaceSession) =>
+    set({ sceneWorkspaceSession }),
+  setPendingSceneWorkspaceAction: (pendingSceneWorkspaceAction) =>
+    set({ pendingSceneWorkspaceAction }),
   resetUi: () => set(initialState),
 }));
