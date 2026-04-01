@@ -31,7 +31,7 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { useUiStore } from "@/store/uiStore";
-import { cn, splitCommaSeparated } from "@/lib/utils";
+import { cn, splitCommaSeparated, splitLines } from "@/lib/utils";
 import type {
   ProjectSnapshot,
   Scene,
@@ -256,6 +256,55 @@ function buildSceneWorkspaceAiContext(
     null,
     2,
   );
+}
+
+function getHtmlTextContent(value: string) {
+  if (typeof DOMParser === "undefined") {
+    return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+  }
+
+  return new DOMParser()
+    .parseFromString(value, "text/html")
+    .body.textContent?.replace(/\s+/g, " ")
+    .trim() ?? "";
+}
+
+function isBlankHtml(value: string) {
+  return getHtmlTextContent(value).length === 0;
+}
+
+function countWords(value: string) {
+  return value.trim().length > 0 ? value.trim().split(/\s+/).length : 0;
+}
+
+function appendBeatOutline(current: string, incoming: string) {
+  const currentOutline = current.trim();
+  const incomingOutline = incoming.trim();
+
+  if (!currentOutline) {
+    return incomingOutline;
+  }
+
+  if (!incomingOutline) {
+    return currentOutline;
+  }
+
+  return `${currentOutline}\n${incomingOutline}`;
+}
+
+function appendDraftHtml(current: string, incoming: string) {
+  const currentHtml = current.trim() || "<p></p>";
+  const incomingHtml = incoming.trim() || "<p></p>";
+
+  if (isBlankHtml(currentHtml)) {
+    return incomingHtml;
+  }
+
+  if (isBlankHtml(incomingHtml)) {
+    return currentHtml;
+  }
+
+  return `${currentHtml}<p></p>${incomingHtml}`;
 }
 
 export function SceneWorkspaceView() {
@@ -610,6 +659,19 @@ export function SceneWorkspaceView() {
     ? appSettings?.ai.providers[defaultProviderId].hasApiKey &&
       defaultModelId.trim().length > 0
     : false;
+  const currentBeatLines = splitLines(planning.beatOutline);
+  const proposedBeatLines = splitLines(beatReview?.result.beatOutline ?? "");
+  const currentDraftText = getHtmlTextContent(draft);
+  const proposedDraftText = getHtmlTextContent(
+    draftReview?.result.manuscriptText ?? "",
+  );
+  const currentDraftWordCount = countWords(currentDraftText);
+  const proposedDraftWordCount = countWords(proposedDraftText);
+  const canAppendBeats =
+    Boolean(beatReview?.result.beatOutline.trim()) &&
+    planning.beatOutline.trim().length > 0;
+  const canAppendDraft =
+    Boolean(draftReview?.result.manuscriptText.trim()) && !isBlankHtml(draft);
 
   async function handleSaveMetadata() {
     if (!planningDirty) {
@@ -669,13 +731,22 @@ export function SceneWorkspaceView() {
     }
   }
 
-  function handleApplyBeatOutline() {
+  function handleCancelBeatReview() {
+    setBeatReview(null);
+  }
+
+  function handleApplyBeatOutline(mode: "replace" | "append" = "replace") {
     const nextBeatOutline = beatReview?.result.beatOutline.trim();
     if (!nextBeatOutline) {
       return;
     }
 
-    updatePlanningField("beatOutline", nextBeatOutline);
+    updatePlanningField(
+      "beatOutline",
+      mode === "append"
+        ? appendBeatOutline(planning.beatOutline, nextBeatOutline)
+        : nextBeatOutline,
+    );
     setBeatReview(null);
     setWorkspaceTab("beats");
   }
@@ -730,8 +801,14 @@ export function SceneWorkspaceView() {
     }
   }
 
-  function handleApplyDraft() {
-    const nextDraft = draftReview?.result.manuscriptText || "<p></p>";
+  function handleCancelDraftReview() {
+    setDraftReview(null);
+  }
+
+  function handleApplyDraft(mode: "replace" | "append" = "replace") {
+    const generatedDraft = draftReview?.result.manuscriptText || "<p></p>";
+    const nextDraft =
+      mode === "append" ? appendDraftHtml(draft, generatedDraft) : generatedDraft;
     setDraft(nextDraft);
     if (editor && editor.getHTML() !== nextDraft) {
       editor.commands.setContent(nextDraft, false);
@@ -1038,24 +1115,59 @@ export function SceneWorkspaceView() {
                   description={
                     beatReview.result.summary ||
                     beatReview.assistantMessage ||
-                    "Review the generated beat outline before replacing the current one."
+                    "Review the generated beat outline against the current one before applying it."
                   }
                   actions={
-                    <Button
-                      variant="secondary"
-                      onClick={handleApplyBeatOutline}
-                      disabled={!beatReview.result.beatOutline.trim()}
-                    >
-                      <CheckSquare className="size-4" />
-                      Replace Beats
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="ghost" onClick={handleCancelBeatReview}>
+                        Cancel
+                      </Button>
+                      {canAppendBeats ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleApplyBeatOutline("append")}
+                          disabled={!beatReview.result.beatOutline.trim()}
+                        >
+                          Append Beats
+                        </Button>
+                      ) : null}
+                      <Button
+                        onClick={() => handleApplyBeatOutline("replace")}
+                        disabled={!beatReview.result.beatOutline.trim()}
+                      >
+                        <CheckSquare className="size-4" />
+                        Replace Beats
+                      </Button>
+                    </div>
                   }
                 />
 
-                <div className="mt-4 rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
-                  <p className="whitespace-pre-wrap">
-                    {beatReview.result.beatOutline || "No beat outline returned."}
-                  </p>
+                <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+                  Current beats stay untouched until you choose Replace or Append.
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-[var(--ink)]">Current Beat Outline</p>
+                      <Badge>{currentBeatLines.length} beat{currentBeatLines.length === 1 ? "" : "s"}</Badge>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap">
+                      {planning.beatOutline.trim() || "No current beat outline yet."}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-[var(--ink)]">Proposed Beat Outline</p>
+                      <Badge tone="accent">
+                        {proposedBeatLines.length} beat{proposedBeatLines.length === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
+                    <p className="mt-3 whitespace-pre-wrap">
+                      {beatReview.result.beatOutline || "No beat outline returned."}
+                    </p>
+                  </div>
                 </div>
               </Panel>
             ) : null}
@@ -1079,29 +1191,75 @@ export function SceneWorkspaceView() {
                   description={
                     draftReview.result.summary ||
                     draftReview.assistantMessage ||
-                    "Review the generated rough draft before replacing the current scene draft."
+                    "Review the generated draft against the current scene prose before applying it."
                   }
                   actions={
-                    <Button
-                      variant="secondary"
-                      onClick={handleApplyDraft}
-                      disabled={!draftReview.result.manuscriptText.trim()}
-                    >
-                      <CheckSquare className="size-4" />
-                      Replace Draft
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="ghost" onClick={handleCancelDraftReview}>
+                        Cancel
+                      </Button>
+                      {canAppendDraft ? (
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleApplyDraft("append")}
+                          disabled={!draftReview.result.manuscriptText.trim()}
+                        >
+                          Append Draft
+                        </Button>
+                      ) : null}
+                      <Button
+                        onClick={() => handleApplyDraft("replace")}
+                        disabled={!draftReview.result.manuscriptText.trim()}
+                      >
+                        <CheckSquare className="size-4" />
+                        Replace Draft
+                      </Button>
+                    </div>
                   }
                 />
 
-                <div className="mt-4 rounded-2xl border border-black/8 bg-white px-5 py-5">
-                  <div
-                    className="prose prose-sm max-w-none text-[var(--ink)]"
-                    dangerouslySetInnerHTML={{
-                      __html:
-                        draftReview.result.manuscriptText ||
-                        "<p>No draft text returned.</p>",
-                    }}
-                  />
+                <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+                  Current draft prose stays untouched until you choose Replace or Append.
+                </div>
+
+                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-[var(--ink)]">Current Draft</p>
+                      <Badge>{currentDraftWordCount} word{currentDraftWordCount === 1 ? "" : "s"}</Badge>
+                    </div>
+                    <div className="mt-4 max-h-[18rem] overflow-y-auto">
+                      {isBlankHtml(draft) ? (
+                        <p className="text-sm text-[var(--ink-muted)]">
+                          No current draft prose yet.
+                        </p>
+                      ) : (
+                        <div
+                          className="prose prose-sm max-w-none text-[var(--ink)]"
+                          dangerouslySetInnerHTML={{ __html: draft }}
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
+                    <div className="flex items-center justify-between gap-3">
+                      <p className="font-semibold text-[var(--ink)]">Proposed Draft</p>
+                      <Badge tone="accent">
+                        {proposedDraftWordCount} word{proposedDraftWordCount === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
+                    <div className="mt-4 max-h-[18rem] overflow-y-auto">
+                      <div
+                        className="prose prose-sm max-w-none text-[var(--ink)]"
+                        dangerouslySetInnerHTML={{
+                          __html:
+                            draftReview.result.manuscriptText ||
+                            "<p>No draft text returned.</p>",
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
               </Panel>
             ) : null}

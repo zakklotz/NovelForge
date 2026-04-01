@@ -354,8 +354,8 @@ describe("Chapter workspace", () => {
             targetSceneId: null,
             chapterId: "chapter-1",
             chapterTitleHint: null,
-            title: "Customs False Alarm",
-            summary: "Ava nearly gets exposed before the plan resets.",
+            title: "Dock Nine Exchange",
+            summary: "Ava meets the client again under a new layer of pressure.",
             purpose: "Escalate the chapter's pressure.",
             beatOutline: "Alarm sounds\nAva improvises\nThe threat retreats for now",
             conflict: "A guard notices the wrong detail.",
@@ -420,28 +420,46 @@ describe("Chapter workspace", () => {
     });
 
     await screen.findByText("Scene Proposals");
+    await screen.findByText('Likely duplicates "Dock Nine Exchange".');
     expect(tauriApiMock.saveScene).not.toHaveBeenCalled();
 
+    fireEvent.change(screen.getByDisplayValue("Safehouse Bargain"), {
+      target: {
+        value: "Safehouse Terms",
+      },
+    });
+    fireEvent.change(
+      screen.getByDisplayValue("Rian trades part of the truth for Ava's continued help."),
+      {
+        target: {
+          value: "Ava rewrites the alliance after calling Rian's bluff.",
+        },
+      },
+    );
+    fireEvent.change(
+      screen.getByDisplayValue("Reframe the alliance before the chapter closes."),
+      {
+        target: {
+          value: "Lock in the alliance on sharper terms.",
+        },
+      },
+    );
+    fireEvent.click(screen.getByRole("button", { name: /remove dock nine exchange/i }));
     fireEvent.click(screen.getByRole("button", { name: /insert selected/i }));
 
     await waitFor(() => {
-      expect(tauriApiMock.saveScene).toHaveBeenCalledTimes(2);
+      expect(tauriApiMock.saveScene).toHaveBeenCalledTimes(1);
     });
     expect(tauriApiMock.saveScene).toHaveBeenCalledWith(
       expect.objectContaining({
         chapterId: "chapter-1",
-        title: "Customs False Alarm",
-        beatOutline: "Alarm sounds\nAva improvises\nThe threat retreats for now",
-      }),
-    );
-    expect(tauriApiMock.saveScene).toHaveBeenCalledWith(
-      expect.objectContaining({
-        chapterId: "chapter-1",
-        title: "Safehouse Bargain",
+        title: "Safehouse Terms",
+        summary: "Ava rewrites the alliance after calling Rian's bluff.",
+        purpose: "Lock in the alliance on sharper terms.",
       }),
     );
 
-    await screen.findByText("Inserted 2 proposed scenes into this chapter.");
+    await screen.findByText("Inserted 1 proposed scene into this chapter.");
 
     unmount();
     queryClient.clear();

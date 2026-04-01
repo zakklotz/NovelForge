@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { Chapter, StructuredAiResponse } from "@novelforge/domain";
 import {
+  AlertTriangle,
   ArrowLeft,
   CheckSquare,
   FileText,
@@ -10,6 +11,7 @@ import {
   RefreshCw,
   Save,
   Target,
+  Trash2,
   Users,
   WandSparkles,
 } from "lucide-react";
@@ -111,23 +113,110 @@ function getChangedFields(
   ].filter((value): value is string => Boolean(value));
 }
 
-function toggleIndex(values: number[], index: number) {
-  return values.includes(index)
-    ? values.filter((value) => value !== index)
-    : [...values, index].sort((left, right) => left - right);
+type ChapterSceneProposalDraft = StructuredAiResponse["result"]["sceneProposals"][number] & {
+  reviewId: string;
+  selected: boolean;
+};
+
+interface ChapterScenePreview {
+  id: string;
+  orderIndex: number;
+  title: string;
+  summary: string;
+  purpose: string;
+  outcome: string;
+}
+
+interface ProposalOverlapWarning {
+  sceneId: string;
+  sceneTitle: string;
+  severity: "duplicate" | "overlap";
+  reason: string;
+}
+
+function normalizeComparisonText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildComparisonTerms(value: string) {
+  return Array.from(
+    new Set(
+      normalizeComparisonText(value)
+        .split(" ")
+        .filter((term) => term.length >= 4),
+    ),
+  );
+}
+
+function buildProposalOverlapWarnings(
+  proposal: Pick<ChapterSceneProposalDraft, "title" | "summary" | "purpose">,
+  chapterScenes: ChapterScenePreview[],
+) {
+  const proposalTitle = normalizeComparisonText(proposal.title);
+  const proposalSummary = normalizeComparisonText(proposal.summary);
+  const proposalTerms = buildComparisonTerms(
+    [proposal.title, proposal.summary, proposal.purpose].join(" "),
+  );
+
+  return chapterScenes
+    .map((scene): ProposalOverlapWarning | null => {
+      const sceneTitle = normalizeComparisonText(scene.title);
+      const sceneSummary = normalizeComparisonText(scene.summary);
+      const sceneTerms = buildComparisonTerms(
+        [scene.title, scene.summary, scene.purpose, scene.outcome].join(" "),
+      );
+      const sharedTerms = proposalTerms.filter((term) => sceneTerms.includes(term));
+      const titleMatch =
+        proposalTitle.length > 0 &&
+        (proposalTitle === sceneTitle ||
+          proposalTitle.includes(sceneTitle) ||
+          sceneTitle.includes(proposalTitle));
+      const summaryMatch =
+        proposalSummary.length > 0 && proposalSummary === sceneSummary;
+      const overlapRatio =
+        sharedTerms.length /
+        Math.max(Math.min(proposalTerms.length, sceneTerms.length), 1);
+
+      if (titleMatch || summaryMatch) {
+        return {
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          severity: "duplicate",
+          reason: `Likely duplicates "${scene.title}".`,
+        };
+      }
+
+      if (sharedTerms.length >= 3 && overlapRatio >= 0.45) {
+        return {
+          sceneId: scene.id,
+          sceneTitle: scene.title,
+          severity: "overlap",
+          reason: `May overlap with "${scene.title}" around ${sharedTerms
+            .slice(0, 3)
+            .join(", ")}.`,
+        };
+      }
+
+      return null;
+    })
+    .filter((warning): warning is ProposalOverlapWarning => Boolean(warning))
+    .sort((left, right) =>
+      left.severity === right.severity
+        ? left.sceneTitle.localeCompare(right.sceneTitle)
+        : left.severity === "duplicate"
+          ? -1
+          : 1,
+    );
 }
 
 function buildChapterWorkspaceAiContext(
   chapter: Chapter,
   planning: ChapterPlanningState,
-  chapterScenes: Array<{
-    id: string;
-    orderIndex: number;
-    title: string;
-    summary: string;
-    purpose: string;
-    outcome: string;
-  }>,
+  chapterScenes: ChapterScenePreview[],
   focusedCharacters: Array<{ id: string; name: string; role: string }>,
 ) {
   return JSON.stringify(
@@ -183,8 +272,8 @@ export function ChapterDetailView() {
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
   const [sceneProposalResponse, setSceneProposalResponse] =
     useState<StructuredAiResponse | null>(null);
-  const [selectedSceneProposalIndexes, setSelectedSceneProposalIndexes] = useState<
-    number[]
+  const [sceneProposalDrafts, setSceneProposalDrafts] = useState<
+    ChapterSceneProposalDraft[]
   >([]);
   const [isGeneratingSceneProposals, setIsGeneratingSceneProposals] = useState(false);
   const [isApplyingSceneProposals, setIsApplyingSceneProposals] = useState(false);
@@ -222,7 +311,7 @@ export function ChapterDetailView() {
 
   useEffect(() => {
     setSceneProposalResponse(null);
-    setSelectedSceneProposalIndexes([]);
+    setSceneProposalDrafts([]);
     setSceneProposalError(null);
     setSceneProposalMessage(null);
   }, [chapter?.id]);
@@ -292,13 +381,44 @@ export function ChapterDetailView() {
     ? appSettings?.ai.providers[defaultProviderId].hasApiKey &&
       defaultModelId.trim().length > 0
     : false;
-  const selectedSceneProposalCount = selectedSceneProposalIndexes.length;
+  const selectedSceneProposalCount = sceneProposalDrafts.filter(
+    (proposal) => proposal.selected,
+  ).length;
+  const hasUntitledSelectedSceneProposal = sceneProposalDrafts.some(
+    (proposal) => proposal.selected && proposal.title.trim().length === 0,
+  );
 
   function updatePlanningField<Key extends keyof ChapterPlanningState>(
     field: Key,
     value: ChapterPlanningState[Key],
   ) {
     setPlanning((current) => ({ ...current, [field]: value }));
+  }
+
+  function updateSceneProposalDraft<
+    Key extends keyof Pick<ChapterSceneProposalDraft, "title" | "summary" | "purpose">,
+  >(reviewId: string, field: Key, value: ChapterSceneProposalDraft[Key]) {
+    setSceneProposalDrafts((currentDrafts) =>
+      currentDrafts.map((draft) =>
+        draft.reviewId === reviewId ? { ...draft, [field]: value } : draft,
+      ),
+    );
+  }
+
+  function toggleSceneProposal(reviewId: string) {
+    setSceneProposalDrafts((currentDrafts) =>
+      currentDrafts.map((draft) =>
+        draft.reviewId === reviewId
+          ? { ...draft, selected: !draft.selected }
+          : draft,
+      ),
+    );
+  }
+
+  function removeSceneProposal(reviewId: string) {
+    setSceneProposalDrafts((currentDrafts) =>
+      currentDrafts.filter((draft) => draft.reviewId !== reviewId),
+    );
   }
 
   async function saveCurrentWorkspaceChanges() {
@@ -398,8 +518,12 @@ export function ChapterDetailView() {
       });
 
       setSceneProposalResponse(response);
-      setSelectedSceneProposalIndexes(
-        response.result.sceneProposals.map((_, index) => index),
+      setSceneProposalDrafts(
+        response.result.sceneProposals.map((proposal) => ({
+          ...proposal,
+          reviewId: crypto.randomUUID(),
+          selected: true,
+        })),
       );
     } catch (error) {
       setSceneProposalError(
@@ -421,8 +545,8 @@ export function ChapterDetailView() {
     setSceneProposalError(null);
 
     try {
-      const selectedProposals = sceneProposalResponse.result.sceneProposals.filter(
-        (_, index) => selectedSceneProposalIndexes.includes(index),
+      const selectedProposals = sceneProposalDrafts.filter(
+        (proposal) => proposal.selected,
       );
 
       for (const [index, proposal] of selectedProposals.entries()) {
@@ -456,7 +580,7 @@ export function ChapterDetailView() {
         } into this chapter.`,
       );
       setSceneProposalResponse(null);
-      setSelectedSceneProposalIndexes([]);
+      setSceneProposalDrafts([]);
     } catch (error) {
       setSceneProposalError(
         error instanceof Error
@@ -701,13 +825,17 @@ export function ChapterDetailView() {
               description={
                 sceneProposalResponse.result.summary ||
                 sceneProposalResponse.assistantMessage ||
-                "Review the proposed scenes before inserting them into the chapter."
+                "Edit, deselect, or remove proposals before inserting them into the chapter."
               }
               actions={
                 <Button
                   variant="secondary"
                   onClick={() => void handleInsertSceneProposals()}
-                  disabled={selectedSceneProposalCount === 0 || isApplyingSceneProposals}
+                  disabled={
+                    selectedSceneProposalCount === 0 ||
+                    hasUntitledSelectedSceneProposal ||
+                    isApplyingSceneProposals
+                  }
                 >
                   {isApplyingSceneProposals ? (
                     <RefreshCw className="size-4 animate-spin" />
@@ -720,58 +848,150 @@ export function ChapterDetailView() {
             />
 
             <div className="mt-4 grid gap-3">
-              {sceneProposalResponse.result.sceneProposals.length > 0 ? (
-                sceneProposalResponse.result.sceneProposals.map((proposal, index) => (
-                  <label
-                    key={`${proposal.title}-${index}`}
-                    className="grid gap-3 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
-                  >
-                    <span className="flex items-center gap-3">
-                      <input
-                        type="checkbox"
-                        checked={selectedSceneProposalIndexes.includes(index)}
-                        onChange={() =>
-                          setSelectedSceneProposalIndexes((current) =>
-                            toggleIndex(current, index),
-                          )
-                        }
-                      />
-                      <span className="font-semibold text-[var(--ink)]">
-                        {proposal.title}
-                      </span>
-                    </span>
-                    <p className="text-sm text-[var(--ink-muted)]">
-                      {proposal.summary || "No summary provided."}
-                    </p>
-                    <div className="grid gap-3 text-sm text-[var(--ink-muted)] lg:grid-cols-2">
-                      <div>
-                        <p className="font-semibold text-[var(--ink)]">Purpose</p>
-                        <p className="mt-1">{proposal.purpose || "Not provided."}</p>
+              {hasUntitledSelectedSceneProposal ? (
+                <div className="rounded-2xl border border-[color:rgba(174,67,45,0.2)] bg-[color:rgba(174,67,45,0.08)] px-4 py-3 text-sm text-[var(--danger)]">
+                  Give every selected proposal a title before inserting it.
+                </div>
+              ) : null}
+
+              {sceneProposalDrafts.length > 0 ? (
+                sceneProposalDrafts.map((proposal, index) => {
+                  const overlapWarnings = buildProposalOverlapWarnings(
+                    proposal,
+                    chapterScenes,
+                  );
+
+                  return (
+                    <div
+                      key={proposal.reviewId}
+                      className="grid gap-4 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
+                          <input
+                            type="checkbox"
+                            checked={proposal.selected}
+                            onChange={() => toggleSceneProposal(proposal.reviewId)}
+                          />
+                          Proposal {index + 1}
+                        </label>
+                        <div className="flex items-center gap-2">
+                          {overlapWarnings.length > 0 ? (
+                            <Badge tone="warning">
+                              {overlapWarnings.some(
+                                (warning) => warning.severity === "duplicate",
+                              )
+                                ? "Potential duplicate"
+                                : "Possible overlap"}
+                            </Badge>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            onClick={() => removeSceneProposal(proposal.reviewId)}
+                            aria-label={`Remove ${proposal.title || `proposal ${index + 1}`}`}
+                          >
+                            <Trash2 className="size-4" />
+                            Remove
+                          </Button>
+                        </div>
                       </div>
-                      <div>
-                        <p className="font-semibold text-[var(--ink)]">Outcome</p>
-                        <p className="mt-1">{proposal.outcome || "Not provided."}</p>
+
+                      {overlapWarnings.length > 0 ? (
+                        <div className="rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                          <div className="flex items-start gap-3">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
+                            <div className="grid gap-1 text-sm">
+                              <p className="font-semibold text-[var(--warning)]">
+                                Check for duplicate or overlapping coverage
+                              </p>
+                              {overlapWarnings.map((warning) => (
+                                <p
+                                  key={`${proposal.reviewId}-${warning.sceneId}`}
+                                  className="text-[var(--ink-muted)]"
+                                >
+                                  {warning.reason}
+                                </p>
+                              ))}
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
+
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <Field label="Scene Title">
+                          <Input
+                            value={proposal.title}
+                            onChange={(event) =>
+                              updateSceneProposalDraft(
+                                proposal.reviewId,
+                                "title",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Name the proposed scene."
+                          />
+                        </Field>
+                        <Field label="Purpose">
+                          <Textarea
+                            className="min-h-24"
+                            value={proposal.purpose}
+                            onChange={(event) =>
+                              updateSceneProposalDraft(
+                                proposal.reviewId,
+                                "purpose",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Why does this scene belong in the chapter?"
+                          />
+                        </Field>
+                        <Field label="Summary" className="lg:col-span-2">
+                          <Textarea
+                            className="min-h-24"
+                            value={proposal.summary}
+                            onChange={(event) =>
+                              updateSceneProposalDraft(
+                                proposal.reviewId,
+                                "summary",
+                                event.target.value,
+                              )
+                            }
+                            placeholder="Summarize the scene's visible movement."
+                          />
+                        </Field>
+                      </div>
+
+                      <div className="grid gap-3 text-sm text-[var(--ink-muted)] lg:grid-cols-2">
+                        <div>
+                          <p className="font-semibold text-[var(--ink)]">Outcome</p>
+                          <p className="mt-1">{proposal.outcome || "Not provided."}</p>
+                        </div>
+                        <div>
+                          <p className="font-semibold text-[var(--ink)]">Conflict</p>
+                          <p className="mt-1">{proposal.conflict || "Not provided."}</p>
+                        </div>
+                      </div>
+                      {proposal.beatOutline ? (
+                        <div>
+                          <p className="text-sm font-semibold text-[var(--ink)]">Beat outline</p>
+                          <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-muted)]">
+                            {proposal.beatOutline}
+                          </p>
+                        </div>
+                      ) : null}
+                      <div className="flex flex-wrap gap-2">
+                        {proposal.location ? <Badge>{proposal.location}</Badge> : null}
+                        {proposal.timeLabel ? <Badge>{proposal.timeLabel}</Badge> : null}
+                        {proposal.povCharacterId ? <Badge>POV linked</Badge> : null}
                       </div>
                     </div>
-                    {proposal.beatOutline ? (
-                      <div>
-                        <p className="text-sm font-semibold text-[var(--ink)]">Beat outline</p>
-                        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--ink-muted)]">
-                          {proposal.beatOutline}
-                        </p>
-                      </div>
-                    ) : null}
-                    <div className="flex flex-wrap gap-2">
-                      {proposal.location ? <Badge>{proposal.location}</Badge> : null}
-                      {proposal.timeLabel ? <Badge>{proposal.timeLabel}</Badge> : null}
-                      {proposal.povCharacterId ? <Badge>POV linked</Badge> : null}
-                    </div>
-                  </label>
-                ))
+                  );
+                })
               ) : (
                 <EmptyState
-                  title="No scene proposals yet"
-                  description="NovelForge returned notes, but no structured scene proposals were available to insert."
+                  title="No scene proposals left to insert"
+                  description="NovelForge returned structured proposals, but they have all been removed from this review pass."
                 />
               )}
             </div>
