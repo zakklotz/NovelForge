@@ -57,9 +57,19 @@ interface StoryReferenceJumpTarget {
   label: string;
 }
 
+type SceneMovePlacement = "start" | "end" | "before" | "after";
+
 interface UnassignedSceneMoveDraft {
   targetChapterId: string;
-  placement: "start" | "end" | "before" | "after";
+  placement: SceneMovePlacement;
+  anchorSceneId: string;
+}
+
+interface ChapterSceneMoveDraft {
+  sceneId: string;
+  sourceChapterId: string;
+  targetChapterId: string;
+  placement: SceneMovePlacement;
   anchorSceneId: string;
 }
 
@@ -148,6 +158,53 @@ function getOrderedScenesInBucket<
   return scenes
     .filter((scene) => (scene.chapterId ?? null) === chapterId)
     .sort((left, right) => left.orderIndex - right.orderIndex);
+}
+
+function buildScenePlacementDraft<SceneLike extends { id: string }>(
+  targetScenes: SceneLike[],
+  placement: SceneMovePlacement = "end",
+  anchorSceneId = "",
+) {
+  const nextPlacement =
+    targetScenes.length === 0 &&
+    (placement === "before" || placement === "after")
+      ? "end"
+      : placement;
+  const nextAnchorSceneId = targetScenes.some(
+    (candidate) => candidate.id === anchorSceneId,
+  )
+    ? anchorSceneId
+    : (targetScenes[0]?.id ?? "");
+
+  return {
+    placement: nextPlacement,
+    anchorSceneId: nextAnchorSceneId,
+  };
+}
+
+function getTargetIndexFromPlacement<SceneLike extends { id: string }>(
+  targetScenes: SceneLike[],
+  placement: SceneMovePlacement,
+  anchorSceneId: string,
+) {
+  switch (placement) {
+    case "start":
+      return 0;
+    case "end":
+      return targetScenes.length;
+    case "before": {
+      const anchorIndex = targetScenes.findIndex(
+        (scene) => scene.id === anchorSceneId,
+      );
+      return anchorIndex >= 0 ? anchorIndex : 0;
+    }
+    case "after": {
+      const anchorIndex = targetScenes.findIndex(
+        (scene) => scene.id === anchorSceneId,
+      );
+      return anchorIndex >= 0 ? anchorIndex + 1 : targetScenes.length;
+    }
+  }
 }
 
 function buildChapterSceneMap(snapshot: ProjectSnapshot) {
@@ -544,6 +601,9 @@ export function StoryOverviewView() {
     useState<StructuredAiResponse | null>(null);
   const [isAnalyzingStory, setIsAnalyzingStory] = useState(false);
   const [storyDiagnosticError, setStoryDiagnosticError] = useState<string | null>(null);
+  const [movingChapterSceneId, setMovingChapterSceneId] = useState<string | null>(null);
+  const [chapterSceneMoveDraft, setChapterSceneMoveDraft] =
+    useState<ChapterSceneMoveDraft | null>(null);
   const [movingUnassignedSceneId, setMovingUnassignedSceneId] = useState<string | null>(null);
   const [unassignedMoveDrafts, setUnassignedMoveDrafts] = useState<
     Record<string, UnassignedSceneMoveDraft>
@@ -678,34 +738,73 @@ export function StoryOverviewView() {
   );
   const filledStoryBriefFieldCount = countFilledStoryBriefFields(storyBrief);
   const isMutatingStructure =
-    isAddingChapter || movingChapterId !== null || movingUnassignedSceneId !== null;
+    isAddingChapter ||
+    movingChapterId !== null ||
+    movingChapterSceneId !== null ||
+    movingUnassignedSceneId !== null;
   const hasVisiblePlanningEntries =
     filteredChapters.length > 0 || filteredUnassignedScenes.length > 0;
+  const chapterSceneMoveTargetScenes = chapterSceneMoveDraft
+    ? getOrderedScenesInBucket(
+        currentSnapshot.scenes,
+        chapterSceneMoveDraft.targetChapterId,
+      )
+    : [];
+  const chapterSceneMoveTargetChapter = chapterSceneMoveDraft
+    ? orderedChapters.find(
+        (chapter) => chapter.id === chapterSceneMoveDraft.targetChapterId,
+      ) ?? null
+    : null;
+  const chapterSceneMoveAnchor =
+    chapterSceneMoveDraft?.anchorSceneId && chapterSceneMoveTargetScenes.length > 0
+      ? chapterSceneMoveTargetScenes.find(
+          (candidate) => candidate.id === chapterSceneMoveDraft.anchorSceneId,
+        ) ?? null
+      : null;
 
   function buildUnassignedSceneMoveDraft(
     targetChapterId: string,
-    placement: UnassignedSceneMoveDraft["placement"] = "end",
+    placement: SceneMovePlacement = "end",
     anchorSceneId = "",
   ): UnassignedSceneMoveDraft {
     const targetChapterScenes = getOrderedScenesInBucket(
       currentSnapshot.scenes,
       targetChapterId,
     );
-    const nextPlacement =
-      targetChapterScenes.length === 0 &&
-      (placement === "before" || placement === "after")
-        ? "end"
-        : placement;
-    const nextAnchorSceneId = targetChapterScenes.some(
-      (candidate) => candidate.id === anchorSceneId,
-    )
-      ? anchorSceneId
-      : (targetChapterScenes[0]?.id ?? "");
+    const nextDraft = buildScenePlacementDraft(
+      targetChapterScenes,
+      placement,
+      anchorSceneId,
+    );
 
     return {
       targetChapterId,
-      placement: nextPlacement,
-      anchorSceneId: nextAnchorSceneId,
+      ...nextDraft,
+    };
+  }
+
+  function buildChapterSceneMoveDraft(
+    sceneId: string,
+    sourceChapterId: string,
+    targetChapterId: string,
+    placement: SceneMovePlacement = "end",
+    anchorSceneId = "",
+  ): ChapterSceneMoveDraft {
+    const targetChapterScenes = getOrderedScenesInBucket(
+      currentSnapshot.scenes,
+      targetChapterId,
+    );
+    const nextDraft = buildScenePlacementDraft(
+      targetChapterScenes,
+      placement,
+      anchorSceneId,
+    );
+
+    return {
+      sceneId,
+      sourceChapterId,
+      targetChapterId,
+      ...nextDraft,
     };
   }
 
@@ -735,24 +834,24 @@ export function StoryOverviewView() {
       draft.targetChapterId,
     );
 
-    switch (draft.placement) {
-      case "start":
-        return 0;
-      case "end":
-        return targetChapterScenes.length;
-      case "before": {
-        const anchorIndex = targetChapterScenes.findIndex(
-          (scene) => scene.id === draft.anchorSceneId,
-        );
-        return anchorIndex >= 0 ? anchorIndex : 0;
-      }
-      case "after": {
-        const anchorIndex = targetChapterScenes.findIndex(
-          (scene) => scene.id === draft.anchorSceneId,
-        );
-        return anchorIndex >= 0 ? anchorIndex + 1 : targetChapterScenes.length;
-      }
-    }
+    return getTargetIndexFromPlacement(
+      targetChapterScenes,
+      draft.placement,
+      draft.anchorSceneId,
+    );
+  }
+
+  function getChapterSceneTargetIndex(draft: ChapterSceneMoveDraft) {
+    const targetChapterScenes = getOrderedScenesInBucket(
+      currentSnapshot.scenes,
+      draft.targetChapterId,
+    );
+
+    return getTargetIndexFromPlacement(
+      targetChapterScenes,
+      draft.placement,
+      draft.anchorSceneId,
+    );
   }
 
   function updateStoryBriefField<Key extends keyof StoryBriefState>(
@@ -949,6 +1048,56 @@ export function StoryOverviewView() {
       );
     } finally {
       setMovingUnassignedSceneId(null);
+    }
+  }
+
+  function handleStartChapterSceneMove(sceneId: string, sourceChapterId: string) {
+    const fallbackChapterId =
+      orderedChapters.find((chapter) => chapter.id !== sourceChapterId)?.id ?? "";
+    if (!fallbackChapterId) {
+      return;
+    }
+
+    setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setChapterSceneMoveDraft((currentDraft) =>
+      currentDraft?.sceneId === sceneId
+        ? currentDraft
+        : buildChapterSceneMoveDraft(sceneId, sourceChapterId, fallbackChapterId),
+    );
+  }
+
+  function handleCancelChapterSceneMove() {
+    setChapterSceneMoveDraft(null);
+  }
+
+  async function handleMoveChapterSceneToChapter(sceneId: string) {
+    if (!chapterSceneMoveDraft || chapterSceneMoveDraft.sceneId !== sceneId) {
+      return;
+    }
+
+    setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setMovingChapterSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId: chapterSceneMoveDraft.targetChapterId,
+        targetIndex: getChapterSceneTargetIndex(chapterSceneMoveDraft),
+      });
+      setChapterSceneMoveDraft(null);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not move this scene onto the target chapter spine.",
+      );
+    } finally {
+      setMovingChapterSceneId(null);
     }
   }
 
@@ -1701,6 +1850,9 @@ export function StoryOverviewView() {
               const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
               const isFirstChapter = currentChapterIndex === 0;
               const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
+              const chapterMoveDestinations = orderedChapters.filter(
+                (candidate) => candidate.id !== chapter.id,
+              );
               return (
                 <article
                   key={chapter.id}
@@ -1806,41 +1958,224 @@ export function StoryOverviewView() {
                           Scene Path
                         </p>
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                          Open any scene workspace directly from the chapter flow.
+                          Open any scene workspace directly from the chapter flow, or
+                          move a scene into another chapter without leaving Story Spine.
                         </p>
                       </div>
 
                       {scenes.length > 0 ? (
                         <div className="grid gap-2">
-                          {scenes.map((scene) => (
-                            <button
-                              key={scene.id}
-                              className="rounded-2xl border border-black/8 bg-white/72 px-4 py-3 text-left transition hover:border-black/15 hover:bg-white"
-                              onClick={() => {
-                                setSelectedChapterId(chapter.id);
-                                void navigate({
-                                  to: "/scenes/$sceneId",
-                                  params: { sceneId: scene.id },
-                                });
-                              }}
-                            >
-                              <div className="flex items-start justify-between gap-3">
-                                <div className="min-w-0">
-                                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
-                                    Scene {scene.orderIndex + 1}
-                                  </p>
-                                  <p className="mt-1 font-semibold text-[var(--ink)]">
-                                    {scene.title}
-                                  </p>
-                                </div>
-                                <ChevronRight className="mt-1 size-4 shrink-0 text-[var(--ink-faint)]" />
-                              </div>
+                          {scenes.map((scene) => {
+                            const isMovingChapterScene =
+                              chapterSceneMoveDraft?.sceneId === scene.id;
+                            const targetChapterScenes = isMovingChapterScene
+                              ? chapterSceneMoveTargetScenes
+                              : [];
+                            const targetChapter = isMovingChapterScene
+                              ? chapterSceneMoveTargetChapter
+                              : null;
+                            const moveAnchor = isMovingChapterScene
+                              ? chapterSceneMoveAnchor
+                              : null;
 
-                              <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                                {scene.summary || scene.purpose || "No scene summary captured yet."}
-                              </p>
-                            </button>
-                          ))}
+                            return (
+                              <div
+                                key={scene.id}
+                                className="rounded-2xl border border-black/8 bg-white/72 px-4 py-3"
+                              >
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--ink-faint)]">
+                                      Scene {scene.orderIndex + 1}
+                                    </p>
+                                    <p className="mt-1 font-semibold text-[var(--ink)]">
+                                      {scene.title}
+                                    </p>
+                                    <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                                      {scene.summary ||
+                                        scene.purpose ||
+                                        "No scene summary captured yet."}
+                                    </p>
+                                  </div>
+
+                                  <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      className="px-3 py-2"
+                                      onClick={() =>
+                                        handleStartChapterSceneMove(
+                                          scene.id,
+                                          chapter.id,
+                                        )
+                                      }
+                                      disabled={
+                                        isMutatingStructure ||
+                                        chapterMoveDestinations.length === 0
+                                      }
+                                      aria-label={`Move ${scene.title} to another chapter`}
+                                    >
+                                      Move...
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="secondary"
+                                      className="px-3 py-2"
+                                      onClick={() => {
+                                        setSelectedChapterId(chapter.id);
+                                        void navigate({
+                                          to: "/scenes/$sceneId",
+                                          params: { sceneId: scene.id },
+                                        });
+                                      }}
+                                      disabled={isMutatingStructure}
+                                      aria-label={`Open ${scene.title}`}
+                                    >
+                                      <ChevronRight className="size-4" />
+                                      Open
+                                    </Button>
+                                  </div>
+                                </div>
+
+                                {isMovingChapterScene && chapterSceneMoveDraft ? (
+                                  <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
+                                    <div className="grid gap-3 lg:grid-cols-2">
+                                      <Field
+                                        label="Move Into Chapter"
+                                        hint="Choose the destination chapter"
+                                      >
+                                        <Select
+                                          value={chapterSceneMoveDraft.targetChapterId}
+                                          onChange={(event) =>
+                                            setChapterSceneMoveDraft((currentDraft) =>
+                                              currentDraft?.sceneId === scene.id
+                                                ? buildChapterSceneMoveDraft(
+                                                    scene.id,
+                                                    chapter.id,
+                                                    event.target.value,
+                                                    currentDraft.placement,
+                                                    currentDraft.anchorSceneId,
+                                                  )
+                                                : currentDraft,
+                                            )
+                                          }
+                                        >
+                                          {chapterMoveDestinations.map((candidate) => (
+                                            <option key={candidate.id} value={candidate.id}>
+                                              {candidate.title}
+                                            </option>
+                                          ))}
+                                        </Select>
+                                      </Field>
+
+                                      <Field label="Insert Position">
+                                        <Select
+                                          value={chapterSceneMoveDraft.placement}
+                                          onChange={(event) =>
+                                            setChapterSceneMoveDraft((currentDraft) =>
+                                              currentDraft?.sceneId === scene.id
+                                                ? buildChapterSceneMoveDraft(
+                                                    scene.id,
+                                                    chapter.id,
+                                                    currentDraft.targetChapterId,
+                                                    event.target
+                                                      .value as SceneMovePlacement,
+                                                    currentDraft.anchorSceneId,
+                                                  )
+                                                : currentDraft,
+                                            )
+                                          }
+                                        >
+                                          <option value="start">At chapter beginning</option>
+                                          <option value="end">At chapter end</option>
+                                          {targetChapterScenes.length > 0 ? (
+                                            <>
+                                              <option value="before">
+                                                Before selected scene
+                                              </option>
+                                              <option value="after">
+                                                After selected scene
+                                              </option>
+                                            </>
+                                          ) : null}
+                                        </Select>
+                                      </Field>
+                                    </div>
+
+                                    {chapterSceneMoveDraft.placement === "before" ||
+                                    chapterSceneMoveDraft.placement === "after" ? (
+                                      <div className="mt-3 max-w-xl">
+                                        <Field
+                                          label={
+                                            chapterSceneMoveDraft.placement === "before"
+                                              ? "Before Scene"
+                                              : "After Scene"
+                                          }
+                                        >
+                                          <Select
+                                            value={chapterSceneMoveDraft.anchorSceneId}
+                                            onChange={(event) =>
+                                              setChapterSceneMoveDraft((currentDraft) =>
+                                                currentDraft?.sceneId === scene.id
+                                                  ? {
+                                                      ...currentDraft,
+                                                      anchorSceneId: event.target.value,
+                                                    }
+                                                  : currentDraft,
+                                              )
+                                            }
+                                          >
+                                            {targetChapterScenes.map(
+                                              (candidate, targetIndex) => (
+                                                <option
+                                                  key={candidate.id}
+                                                  value={candidate.id}
+                                                >
+                                                  {targetIndex + 1}. {candidate.title}
+                                                </option>
+                                              ),
+                                            )}
+                                          </Select>
+                                        </Field>
+                                      </div>
+                                    ) : null}
+
+                                    <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                                      {chapterSceneMoveDraft.placement === "start"
+                                        ? `The scene will be inserted at the beginning of ${targetChapter?.title ?? "the selected chapter"}.`
+                                        : chapterSceneMoveDraft.placement === "end"
+                                          ? `The scene will be inserted at the end of ${targetChapter?.title ?? "the selected chapter"}.`
+                                          : chapterSceneMoveDraft.placement === "before"
+                                            ? `The scene will be inserted before ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`
+                                            : `The scene will be inserted after ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`}{" "}
+                                      NovelForge will persist that choice through the saved
+                                      backend order.
+                                    </p>
+
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        onClick={handleCancelChapterSceneMove}
+                                        disabled={movingChapterSceneId === scene.id}
+                                      >
+                                        Cancel
+                                      </Button>
+                                      <Button
+                                        type="button"
+                                        onClick={() =>
+                                          void handleMoveChapterSceneToChapter(scene.id)
+                                        }
+                                        disabled={isMutatingStructure}
+                                      >
+                                        Move to Chapter
+                                      </Button>
+                                    </div>
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
                         </div>
                       ) : (
                         <div className="rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">

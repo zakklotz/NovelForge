@@ -1262,6 +1262,123 @@ describe("StoryOverviewView", () => {
     queryClient.clear();
   });
 
+  it("moves a chapter scene into another chapter end by default through the backend move command", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a chapter scene before a selected target chapter scene through the backend move command", async () => {
+    const targetAnchor = currentSnapshot.scenes.find((scene) => scene.id === "scene-3");
+    if (!targetAnchor) {
+      throw new Error("Expected chapter 2 anchor scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...targetAnchor,
+          id: "scene-4",
+          orderIndex: 1,
+          title: "Signal Fire",
+          summary: "A second chapter scene gives Story Spine a second insertion anchor.",
+          purpose: "Hold the line after the checkpoint.",
+          dependencySceneIds: ["scene-3"],
+        },
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "before" },
+    });
+    fireEvent.change(screen.getByLabelText(/before scene/i), {
+      target: { value: "scene-4" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved story brief edits in place when moving a chapter scene refreshes the snapshot", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value: "A courier shifts one chapter scene while the top-level spine intent keeps changing.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect((screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value).toBe(
+      "A courier shifts one chapter scene while the top-level spine intent keeps changing.",
+    );
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("opens the chapter workspace from a story spine card", async () => {
     const { queryClient, unmount } = renderRouter();
 
@@ -1296,7 +1413,7 @@ describe("StoryOverviewView", () => {
     const firstChapterCard = screen.getAllByRole("article")[0];
     fireEvent.click(
       within(firstChapterCard).getByRole("button", {
-        name: /Dock Nine Exchange/i,
+        name: /open dock nine exchange/i,
       }),
     );
 
