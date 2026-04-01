@@ -121,6 +121,25 @@ describe("domain schemas", () => {
                 related: [],
               },
             ],
+            endingDirectionPreparation: [
+              {
+                title: "Chapter 2 is not yet preparing the ending's stewardship choice",
+                detail:
+                  "The checkpoint material raises pressure, but the saved ending direction still needs earlier groundwork for Ava choosing stewardship over escape.",
+                focus: {
+                  kind: "chapter",
+                  id: "chapter-2",
+                  title: "Chapter 2: Border Sparks",
+                },
+                related: [
+                  {
+                    kind: "scene",
+                    id: "scene-3",
+                    title: "Checkpoint Lanterns",
+                  },
+                ],
+              },
+            ],
             nextPlanningTargets: [],
           },
         },

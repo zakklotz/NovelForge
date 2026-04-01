@@ -199,6 +199,7 @@ export const storyStructureDiagnosticSchema = z.object({
   redundantFunctions: z.array(storyDiagnosticEntrySchema).default([]),
   missingTransitions: z.array(storyDiagnosticEntrySchema).default([]),
   briefAlignmentNotes: z.array(storyBriefAlignmentNoteSchema).default([]),
+  endingDirectionPreparation: z.array(storyDiagnosticEntrySchema).default([]),
   nextPlanningTargets: z.array(storyDiagnosticEntrySchema).default([]),
 });
 
@@ -269,6 +270,7 @@ export const structuredAiResultSchema = z.object({
     redundantFunctions: [],
     missingTransitions: [],
     briefAlignmentNotes: [],
+    endingDirectionPreparation: [],
     nextPlanningTargets: [],
   }),
 });

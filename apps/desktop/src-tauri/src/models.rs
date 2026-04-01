@@ -379,6 +379,7 @@ pub struct StoryStructureDiagnostic {
     pub redundant_functions: Vec<StoryDiagnosticEntry>,
     pub missing_transitions: Vec<StoryDiagnosticEntry>,
     pub brief_alignment_notes: Vec<StoryBriefAlignmentNote>,
+    pub ending_direction_preparation: Vec<StoryDiagnosticEntry>,
     pub next_planning_targets: Vec<StoryDiagnosticEntry>,
 }
 

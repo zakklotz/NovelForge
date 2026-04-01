@@ -344,6 +344,14 @@ const storyDiagnosticSections: Array<{
     tone: "accent",
   },
   {
+    key: "endingDirectionPreparation",
+    title: "Ending Direction Preparation",
+    description:
+      "Places where the current spine is or is not laying groundwork for the saved ending direction.",
+    emptyMessage: "No ending-direction preparation notes surfaced in this review pass.",
+    tone: "accent",
+  },
+  {
     key: "nextPlanningTargets",
     title: "Next Planning Targets",
     description: "Highest-leverage planning passes to tackle next.",
@@ -446,6 +454,17 @@ function buildStoryBriefAlignmentBadge(
     default:
       return { label: "Weak support", tone: "warning" };
   }
+}
+
+function hasMeaningfulEndingDirection(project: Project | null | undefined) {
+  return Boolean(project?.endingDirection.trim());
+}
+
+function shouldShowStoryDiagnosticSection(
+  sectionKey: keyof StoryStructureDiagnostic,
+  project: Project | null | undefined,
+) {
+  return sectionKey !== "endingDirectionPreparation" || hasMeaningfulEndingDirection(project);
 }
 
 export function StoryOverviewView() {
@@ -558,6 +577,9 @@ export function StoryOverviewView() {
     orderedChapters,
     chapterScenes,
   );
+  const visibleStoryDiagnosticSections = storyDiagnosticSections.filter((section) =>
+    shouldShowStoryDiagnosticSection(section.key, currentSnapshot.project),
+  );
   const chapterOrderIndex = new Map(
     orderedChapters.map((chapter, index) => [chapter.id, index]),
   );
@@ -590,7 +612,7 @@ export function StoryOverviewView() {
     );
     return chapterDiagnosticSummary.badges.length > 0;
   }).length;
-  const storyDiagnosticEntryCount = storyDiagnosticSections.reduce(
+  const storyDiagnosticEntryCount = visibleStoryDiagnosticSections.reduce(
     (count, section) =>
       count +
       (storyDiagnosticResponse?.result.storyStructureDiagnostic[section.key].length ?? 0),
@@ -1103,7 +1125,7 @@ export function StoryOverviewView() {
           </div>
 
           <div className="mt-6 grid gap-4 xl:grid-cols-2">
-            {storyDiagnosticSections.map((section) => {
+            {visibleStoryDiagnosticSections.map((section) => {
               const entries =
                 storyDiagnosticResponse.result.storyStructureDiagnostic[section.key];
 

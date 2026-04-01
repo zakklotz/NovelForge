@@ -223,6 +223,8 @@ struct RawStoryStructureDiagnostic {
     #[serde(default)]
     brief_alignment_notes: Vec<RawStoryDiagnosticEntry>,
     #[serde(default)]
+    ending_direction_preparation: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
     next_planning_targets: Vec<RawStoryDiagnosticEntry>,
 }
 
@@ -917,6 +919,12 @@ Return JSON only with this exact top-level shape:\n\
         \"focus\": null,\n\
         \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
       }}],\n\
+      \"endingDirectionPreparation\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
       \"nextPlanningTargets\": [{{\n\
         \"title\": \"\",\n\
         \"detail\": \"\",\n\
@@ -937,6 +945,8 @@ Rules:\n\
 - Keep storyStructureDiagnostic entries short, concrete, and review-oriented.\n\
 - In briefAlignmentNotes, mention the saved story-brief element only when it adds useful planning signal.\n\
 - In briefAlignmentNotes, set alignment to support, weak_support, or risk.\n\
+- In endingDirectionPreparation, add 0 to 3 planning-oriented notes about whether the current spine is preparing the saved ending direction only when that ending target is specific enough to matter.\n\
+- If the saved brief has no meaningful ending direction, leave endingDirectionPreparation empty.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -977,6 +987,10 @@ Task:\n\
 - Only add a briefAlignmentNote when that alignment label is clearly justified by the current structure and the saved brief.\n\
 - Keep briefAlignmentNotes selective and planning-oriented: 0 to 3 entries, only when the saved brief has enough signal.\n\
 - If the saved brief is sparse, generic, or not materially relevant to the current structure, leave briefAlignmentNotes empty.\n\
+- Use result.storyStructureDiagnostic.endingDirectionPreparation for narrow planning notes about whether the current spine is laying groundwork for the saved ending direction.\n\
+- Only add an endingDirectionPreparation note when the saved brief includes a meaningful ending target and the current spine gives enough evidence to judge the setup.\n\
+- Keep endingDirectionPreparation selective and review-only: 0 to 3 entries focused on setup, payoff preparation, or missing groundwork rather than rewriting the ending itself.\n\
+- If the saved brief has no meaningful ending direction, or the ending target is too generic to use well, leave endingDirectionPreparation empty.\n\
 - Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
 - Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
 - Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
@@ -1246,6 +1260,11 @@ fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStru
             .brief_alignment_notes
             .into_iter()
             .filter_map(map_story_brief_alignment_note)
+            .collect(),
+        ending_direction_preparation: raw
+            .ending_direction_preparation
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
             .collect(),
         next_planning_targets: raw
             .next_planning_targets
@@ -1871,6 +1890,14 @@ mod tests {
           "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
         }
       ],
+      "endingDirectionPreparation": [
+        {
+          "title": "Chapter 2 is not yet preparing Ava's later stewardship choice",
+          "detail": "The border material escalates danger, but the spine still needs earlier groundwork for Ava choosing stewardship over escape by the ending.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
+        }
+      ],
       "nextPlanningTargets": [
         {
           "title": "Define the chapter-level irreversible turn",
@@ -1920,9 +1947,78 @@ mod tests {
         assert_eq!(
             result
                 .story_structure_diagnostic
+                .ending_direction_preparation
+                .len(),
+            1
+        );
+        assert_eq!(
+            result.story_structure_diagnostic.ending_direction_preparation[0]
+                .focus
+                .as_ref()
+                .map(|reference| reference.id.as_str()),
+            Some("chapter-2")
+        );
+        assert_eq!(
+            result
+                .story_structure_diagnostic
                 .next_planning_targets
                 .len(),
             1
+        );
+    }
+
+    #[test]
+    fn structured_parser_normalizes_missing_or_invalid_story_brief_alignment_to_weak_support() {
+        let raw = r#"
+{
+  "assistantMessage": "Reviewed the whole spine.",
+  "result": {
+    "summary": "Alignment values normalize safely.",
+    "sceneProposals": [],
+    "beatOutline": "",
+    "manuscriptText": "",
+    "storyStructureDiagnostic": {
+      "underdefinedChapters": [],
+      "redundantFunctions": [],
+      "missingTransitions": [],
+      "briefAlignmentNotes": [
+        {
+          "title": "Missing alignment should stay safe",
+          "detail": "No explicit alignment label was returned.",
+          "focus": { "kind": "chapter", "id": "chapter-1", "title": "Chapter 1: The Wrong Package" },
+          "related": []
+        },
+        {
+          "title": "Invalid alignment should stay safe",
+          "detail": "Unexpected labels should not break the parser.",
+          "alignment": "strongly_supports",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": []
+        }
+      ],
+      "endingDirectionPreparation": [],
+      "nextPlanningTargets": []
+    }
+  }
+}
+"#;
+
+        let (_, result) = parse_structured_action_response("story-diagnose-structure", raw);
+
+        assert_eq!(
+            result
+                .story_structure_diagnostic
+                .brief_alignment_notes
+                .len(),
+            2
+        );
+        assert_eq!(
+            result.story_structure_diagnostic.brief_alignment_notes[0].alignment,
+            StoryBriefAlignment::WeakSupport
+        );
+        assert_eq!(
+            result.story_structure_diagnostic.brief_alignment_notes[1].alignment,
+            StoryBriefAlignment::WeakSupport
         );
     }
 
@@ -1958,6 +2054,8 @@ mod tests {
             "use alignment support when the spine already gives clear concrete evidence"
         ));
         assert!(prompt.contains("If the saved brief is sparse, generic, or not materially relevant"));
+        assert!(prompt.contains("result.storyStructureDiagnostic.endingDirectionPreparation"));
+        assert!(prompt.contains("If the saved brief has no meaningful ending direction"));
     }
 
     #[test]

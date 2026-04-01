@@ -227,6 +227,25 @@ function createStoryDiagnosticResponse() {
             ],
           },
         ],
+        endingDirectionPreparation: [
+          {
+            title: "Chapter 2 is not yet preparing Ava's later stewardship choice",
+            detail:
+              "The checkpoint pressure escalates danger, but the spine still needs earlier groundwork for Ava choosing stewardship over escape by the ending.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-3",
+                title: "Checkpoint Lanterns",
+              },
+            ],
+          },
+        ],
         nextPlanningTargets: [
           {
             title: "Clarify what Chapter 2 permanently changes",
@@ -563,6 +582,7 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Redundant Functions")).toBeTruthy();
     expect(screen.getByText("Missing Transitions")).toBeTruthy();
     expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
+    expect(screen.getByText("Ending Direction Preparation")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
     expect(screen.getByText("Support")).toBeTruthy();
     expect(screen.getByText("Weak support")).toBeTruthy();
@@ -571,11 +591,49 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Chapter 2 needs a clearer chapter-level turn")).toBeTruthy();
     expect(screen.getByText("Chapter 2 under-supports Ava's responsibility turn")).toBeTruthy();
     expect(
+      screen.getByText("Chapter 2 is not yet preparing Ava's later stewardship choice"),
+    ).toBeTruthy();
+    expect(
       screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" }).length,
     ).toBeGreaterThan(0);
     expect(
       screen.getAllByRole("button", { name: "Chapter 2 · Scene 1: Checkpoint Lanterns" }).length,
     ).toBeGreaterThan(0);
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("hides ending-direction preparation when the saved brief has no ending target", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      project: {
+        ...currentSnapshot.project,
+        endingDirection: "",
+      },
+    };
+
+    const response = createStoryDiagnosticResponse();
+    response.result.storyStructureDiagnostic.endingDirectionPreparation = [];
+    tauriApiMock.runStructuredAiAction.mockResolvedValue(response);
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Analyze Story Structure",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Structure Review")).toBeTruthy();
+    });
+
+    expect(screen.queryByText("Ending Direction Preparation")).toBeNull();
 
     unmount();
     queryClient.clear();
