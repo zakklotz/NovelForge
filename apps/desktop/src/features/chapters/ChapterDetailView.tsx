@@ -24,6 +24,7 @@ import {
   Field,
   Input,
   Panel,
+  Select,
   SectionHeading,
   Textarea,
 } from "@/components/ui";
@@ -127,6 +128,11 @@ interface ChapterScenePreview {
   summary: string;
   purpose: string;
   outcome: string;
+}
+
+interface ChapterSceneMoveDraft {
+  sceneId: string;
+  targetChapterId: string;
 }
 
 interface ProposalOverlapWarning {
@@ -286,6 +292,9 @@ export function ChapterDetailView() {
   const [sceneProposalError, setSceneProposalError] = useState<string | null>(null);
   const [sceneProposalMessage, setSceneProposalMessage] = useState<string | null>(null);
   const [movingSceneId, setMovingSceneId] = useState<string | null>(null);
+  const [sceneMoveDraft, setSceneMoveDraft] = useState<ChapterSceneMoveDraft | null>(
+    null,
+  );
   const [sceneMoveError, setSceneMoveError] = useState<string | null>(null);
   const chapterJumpHighlightRef = useRef<HTMLElement | null>(null);
   const [isJumpHighlighted, setIsJumpHighlighted] = useState(false);
@@ -324,6 +333,9 @@ export function ChapterDetailView() {
     setSceneProposalDrafts([]);
     setSceneProposalError(null);
     setSceneProposalMessage(null);
+    setMovingSceneId(null);
+    setSceneMoveDraft(null);
+    setSceneMoveError(null);
   }, [chapter?.id]);
 
   const chapterDirty = Boolean(chapter) && !arePlanningStatesEqual(planning, persistedPlanning);
@@ -407,6 +419,9 @@ export function ChapterDetailView() {
   const chapterScenes = currentSnapshot.scenes
     .filter((scene) => scene.chapterId === currentChapter.id)
     .sort((left, right) => left.orderIndex - right.orderIndex);
+  const otherChapters = [...currentSnapshot.chapters]
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .filter((candidate) => candidate.id !== currentChapter.id);
   const focusedCharacters = currentSnapshot.characters.filter((character) =>
     planning.characterFocusIds.includes(character.id),
   );
@@ -541,6 +556,7 @@ export function ChapterDetailView() {
       desiredIndex > currentIndex ? desiredIndex + 1 : desiredIndex;
 
     setSceneMoveError(null);
+    setSceneMoveDraft(null);
     setMovingSceneId(sceneId);
 
     try {
@@ -554,7 +570,59 @@ export function ChapterDetailView() {
       setSceneMoveError(
         error instanceof Error
           ? error.message
-          : "NovelForge could not reorder this scene right now.",
+          : "NovelForge could not move this scene right now.",
+      );
+    } finally {
+      setMovingSceneId(null);
+    }
+  }
+
+  function handleStartCrossChapterMove(sceneId: string) {
+    if (otherChapters.length === 0) {
+      return;
+    }
+
+    setSceneMoveError(null);
+    setSceneMoveDraft((currentDraft) =>
+      currentDraft?.sceneId === sceneId
+        ? currentDraft
+        : {
+            sceneId,
+            targetChapterId: otherChapters[0].id,
+          },
+    );
+  }
+
+  function handleCancelCrossChapterMove() {
+    setSceneMoveDraft(null);
+  }
+
+  async function handleMoveSceneToChapter(sceneId: string) {
+    if (!sceneMoveDraft || sceneMoveDraft.sceneId !== sceneId) {
+      return;
+    }
+
+    const targetChapterId = sceneMoveDraft.targetChapterId;
+    const targetIndex = currentSnapshot.scenes.filter(
+      (scene) => scene.chapterId === targetChapterId,
+    ).length;
+
+    setSceneMoveError(null);
+    setMovingSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId,
+        targetIndex,
+      });
+      setSceneMoveDraft(null);
+    } catch (error) {
+      setSceneMoveError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not move this scene right now.",
       );
     } finally {
       setMovingSceneId(null);
@@ -1091,7 +1159,7 @@ export function ChapterDetailView() {
           <div className="flex items-center gap-2 text-sm font-medium text-[var(--ink-muted)]">
             <ListOrdered className="size-4" />
             Scene order comes from the chapter's saved story structure. Move scenes
-            earlier or later here without leaving the chapter workspace.
+            earlier, later, or into another chapter without leaving this workspace.
           </div>
 
           <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1">
@@ -1140,6 +1208,16 @@ export function ChapterDetailView() {
                       </Button>
                       <Button
                         type="button"
+                        variant="ghost"
+                        className="px-3"
+                        onClick={() => handleStartCrossChapterMove(scene.id)}
+                        disabled={otherChapters.length === 0 || Boolean(movingSceneId)}
+                        aria-label={`Move ${scene.title} to another chapter`}
+                      >
+                        Move to Chapter...
+                      </Button>
+                      <Button
+                        type="button"
                         variant="secondary"
                         className="px-3"
                         onClick={() =>
@@ -1184,6 +1262,52 @@ export function ChapterDetailView() {
                       <Badge>{scene.dependencySceneIds.length} dependency link{scene.dependencySceneIds.length === 1 ? "" : "s"}</Badge>
                     ) : null}
                   </div>
+                  {sceneMoveDraft?.sceneId === scene.id ? (
+                    <div className="mt-4 grid gap-3 rounded-2xl border border-black/8 bg-[color:rgba(184,88,63,0.06)] px-4 py-4">
+                      <Field label="Move to Chapter">
+                        <Select
+                          value={sceneMoveDraft.targetChapterId}
+                          onChange={(event) =>
+                            setSceneMoveDraft((currentDraft) =>
+                              currentDraft?.sceneId === scene.id
+                                ? {
+                                    ...currentDraft,
+                                    targetChapterId: event.target.value,
+                                  }
+                                : currentDraft,
+                            )
+                          }
+                        >
+                          {otherChapters.map((candidate) => (
+                            <option key={candidate.id} value={candidate.id}>
+                              {candidate.title}
+                            </option>
+                          ))}
+                        </Select>
+                      </Field>
+                      <p className="text-sm text-[var(--ink-muted)]">
+                        The scene will be inserted at the end of the selected chapter
+                        using the saved backend order.
+                      </p>
+                      <div className="flex flex-wrap gap-2">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={handleCancelCrossChapterMove}
+                          disabled={movingSceneId === scene.id}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          type="button"
+                          onClick={() => void handleMoveSceneToChapter(scene.id)}
+                          disabled={movingSceneId === scene.id}
+                        >
+                          Move to Chapter End
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
                   {movingSceneId === scene.id ? (
                     <p className="mt-4 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]">
                       Updating order...

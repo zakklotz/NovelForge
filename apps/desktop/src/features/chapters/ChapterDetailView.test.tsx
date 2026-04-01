@@ -71,40 +71,45 @@ function moveSceneWithinChapterSnapshot(
     throw new Error(`Scene ${sceneId} not found.`);
   }
 
-  const targetScenes = snapshot.scenes
-    .filter(
-      (scene) =>
-        (scene.chapterId ?? null) === targetChapterId && scene.id !== sceneId,
-    )
-    .sort((left, right) => left.orderIndex - right.orderIndex);
+  const sourceChapterId = movingScene.chapterId ?? null;
+  const bucketIds = Array.from(new Set([sourceChapterId, targetChapterId]));
+  const scenesByBucket = new Map(
+    bucketIds.map((chapterId) => [
+      chapterId,
+      snapshot.scenes
+        .filter(
+          (scene) => (scene.chapterId ?? null) === chapterId && scene.id !== sceneId,
+        )
+        .sort((left, right) => left.orderIndex - right.orderIndex),
+    ]),
+  );
+  const targetScenes = [...(scenesByBucket.get(targetChapterId) ?? [])];
   const clampedTargetIndex = Math.max(
     0,
     Math.min(targetIndex, targetScenes.length),
   );
-  const reorderedScenes = [...targetScenes];
 
-  reorderedScenes.splice(clampedTargetIndex, 0, {
+  targetScenes.splice(clampedTargetIndex, 0, {
     ...movingScene,
     chapterId: targetChapterId,
   });
+  scenesByBucket.set(targetChapterId, targetScenes);
 
-  const updatedScenesById = new Map(
-    reorderedScenes.map((scene, index) => [
-      scene.id,
-      {
+  const updatedScenesById = new Map<string, (typeof snapshot.scenes)[number]>();
+  for (const scenes of scenesByBucket.values()) {
+    scenes.forEach((scene, index) => {
+      updatedScenesById.set(scene.id, {
         ...scene,
         orderIndex: index,
         updatedAt: "2026-03-31T12:00:00.000Z",
-      },
-    ]),
-  );
+      });
+    });
+  }
 
   return {
     ...snapshot,
     scenes: snapshot.scenes.map((scene) =>
-      scene.id === sceneId || (scene.chapterId ?? null) === targetChapterId
-        ? (updatedScenesById.get(scene.id) ?? scene)
-        : scene,
+      updatedScenesById.get(scene.id) ?? scene,
     ),
   };
 }
@@ -279,6 +284,45 @@ describe("Chapter workspace", () => {
     queryClient.clear();
   });
 
+  it("moves a scene to a different chapter through the backend move command", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+
+    expect(
+      screen.getByDisplayValue("Chapter 2: Border Sparks"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /move to chapter end/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Dock Nine Exchange")).toBeNull();
+    });
+    expect(screen.getByText("The Crate Speaks")).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("keeps unsaved chapter edits in place when adding a scene refreshes the snapshot", async () => {
     const { unmount, queryClient } = renderRouter();
 
@@ -361,6 +405,45 @@ describe("Chapter workspace", () => {
     expect(
       (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
     ).toBe("Ava reframes the whole chapter before the scenes shift under her.");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved chapter edits in place when moving a scene to another chapter refreshes the snapshot", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    const summaryPlaceholder = "Summarize the chapter's visible movement.";
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(summaryPlaceholder)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(summaryPlaceholder), {
+      target: {
+        value: "Ava reframes the chapter while one scene gets promoted into the next chapter.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /move to chapter end/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Dock Nine Exchange")).toBeNull();
+    });
+
+    expect(
+      (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
+    ).toBe(
+      "Ava reframes the chapter while one scene gets promoted into the next chapter.",
+    );
 
     unmount();
     queryClient.clear();
