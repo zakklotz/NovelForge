@@ -293,7 +293,7 @@ describe("Chapter workspace", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /move dock nine exchange to another chapter/i,
+        name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
 
@@ -333,7 +333,7 @@ describe("Chapter workspace", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /move dock nine exchange to another chapter/i,
+        name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
 
@@ -387,7 +387,7 @@ describe("Chapter workspace", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /move dock nine exchange to another chapter/i,
+        name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
 
@@ -408,6 +408,45 @@ describe("Chapter workspace", () => {
       sceneId: "scene-1",
       targetChapterId: "chapter-2",
       targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a scene to unassigned through the backend move command", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/move destination/i), {
+      target: { value: "__unassigned__" },
+    });
+    expect(screen.getByDisplayValue("Unassigned")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: null,
+      targetIndex: 0,
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Dock Nine Exchange")).toBeNull();
     });
 
     unmount();
@@ -517,7 +556,7 @@ describe("Chapter workspace", () => {
 
     fireEvent.click(
       screen.getByRole("button", {
-        name: /move dock nine exchange to another chapter/i,
+        name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
     fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
@@ -534,6 +573,48 @@ describe("Chapter workspace", () => {
       (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
     ).toBe(
       "Ava reframes the chapter while one scene gets promoted into the next chapter.",
+    );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved chapter edits in place when moving a scene to unassigned refreshes the snapshot", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    const summaryPlaceholder = "Summarize the chapter's visible movement.";
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText(summaryPlaceholder)).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText(summaryPlaceholder), {
+      target: {
+        value: "Ava revises the chapter while one scene drops back into the unassigned pool.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+    fireEvent.change(screen.getByLabelText(/move destination/i), {
+      target: { value: "__unassigned__" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    await waitFor(() => {
+      expect(screen.queryByText("Dock Nine Exchange")).toBeNull();
+    });
+
+    expect(
+      (screen.getByPlaceholderText(summaryPlaceholder) as HTMLTextAreaElement).value,
+    ).toBe(
+      "Ava revises the chapter while one scene drops back into the unassigned pool.",
     );
 
     unmount();

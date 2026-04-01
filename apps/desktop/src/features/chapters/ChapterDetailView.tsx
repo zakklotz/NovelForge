@@ -132,10 +132,12 @@ interface ChapterScenePreview {
 
 interface ChapterSceneMoveDraft {
   sceneId: string;
-  targetChapterId: string;
+  targetChapterId: string | null;
   placement: "start" | "end" | "before" | "after";
   anchorSceneId: string;
 }
+
+const UNASSIGNED_DESTINATION_VALUE = "__unassigned__";
 
 interface ProposalOverlapWarning {
   sceneId: string;
@@ -433,6 +435,16 @@ export function ChapterDetailView() {
   const otherChapters = [...currentSnapshot.chapters]
     .sort((left, right) => left.orderIndex - right.orderIndex)
     .filter((candidate) => candidate.id !== currentChapter.id);
+  const moveDestinationOptions = [
+    ...otherChapters.map((candidate) => ({
+      id: candidate.id,
+      label: candidate.title,
+    })),
+    {
+      id: null,
+      label: "Unassigned",
+    },
+  ];
   const targetChapterScenes = sceneMoveDraft
     ? getOrderedScenesInChapter(
         currentSnapshot.scenes,
@@ -503,7 +515,7 @@ export function ChapterDetailView() {
 
   function buildSceneMoveDraft(
     sceneId: string,
-    targetChapterId: string,
+    targetChapterId: string | null,
     placement: ChapterSceneMoveDraft["placement"] = "end",
     anchorSceneId = "",
   ): ChapterSceneMoveDraft {
@@ -663,7 +675,7 @@ export function ChapterDetailView() {
   }
 
   function handleStartCrossChapterMove(sceneId: string) {
-    if (otherChapters.length === 0) {
+    if (moveDestinationOptions.length === 0) {
       return;
     }
 
@@ -671,7 +683,7 @@ export function ChapterDetailView() {
     setSceneMoveDraft((currentDraft) =>
       currentDraft?.sceneId === sceneId
         ? currentDraft
-        : buildSceneMoveDraft(sceneId, otherChapters[0].id),
+        : buildSceneMoveDraft(sceneId, moveDestinationOptions[0]?.id ?? null),
     );
   }
 
@@ -1239,7 +1251,8 @@ export function ChapterDetailView() {
           <div className="flex items-center gap-2 text-sm font-medium text-[var(--ink-muted)]">
             <ListOrdered className="size-4" />
             Scene order comes from the chapter's saved story structure. Move scenes
-            earlier, later, or into another chapter without leaving this workspace.
+            earlier, later, into another chapter, or out to unassigned without
+            leaving this workspace.
           </div>
 
           <div className="mt-4 grid min-h-0 flex-1 gap-3 overflow-y-auto pr-1">
@@ -1291,10 +1304,10 @@ export function ChapterDetailView() {
                         variant="ghost"
                         className="px-3"
                         onClick={() => handleStartCrossChapterMove(scene.id)}
-                        disabled={otherChapters.length === 0 || Boolean(movingSceneId)}
-                        aria-label={`Move ${scene.title} to another chapter`}
+                        disabled={Boolean(movingSceneId)}
+                        aria-label={`Move ${scene.title} to another chapter or unassigned`}
                       >
-                        Move to Chapter...
+                        Move...
                       </Button>
                       <Button
                         type="button"
@@ -1344,15 +1357,20 @@ export function ChapterDetailView() {
                   </div>
                   {sceneMoveDraft?.sceneId === scene.id ? (
                     <div className="mt-4 grid gap-3 rounded-2xl border border-black/8 bg-[color:rgba(184,88,63,0.06)] px-4 py-4">
-                      <Field label="Move to Chapter">
+                      <Field label="Move Destination">
                         <Select
-                          value={sceneMoveDraft.targetChapterId}
+                          value={
+                            sceneMoveDraft.targetChapterId ??
+                            UNASSIGNED_DESTINATION_VALUE
+                          }
                           onChange={(event) =>
                             setSceneMoveDraft((currentDraft) =>
                               currentDraft?.sceneId === scene.id
                                 ? buildSceneMoveDraft(
                                     scene.id,
-                                    event.target.value,
+                                    event.target.value === UNASSIGNED_DESTINATION_VALUE
+                                      ? null
+                                      : event.target.value,
                                     currentDraft.placement,
                                     currentDraft.anchorSceneId,
                                   )
@@ -1360,9 +1378,12 @@ export function ChapterDetailView() {
                             )
                           }
                         >
-                          {otherChapters.map((candidate) => (
-                            <option key={candidate.id} value={candidate.id}>
-                              {candidate.title}
+                          {moveDestinationOptions.map((candidate) => (
+                            <option
+                              key={candidate.id ?? UNASSIGNED_DESTINATION_VALUE}
+                              value={candidate.id ?? UNASSIGNED_DESTINATION_VALUE}
+                            >
+                              {candidate.label}
                             </option>
                           ))}
                         </Select>
@@ -1426,22 +1447,22 @@ export function ChapterDetailView() {
                       <p className="text-sm text-[var(--ink-muted)]">
                         {sceneMoveDraft.placement === "start"
                           ? `The scene will be inserted at the beginning of ${
-                              targetChapter?.title ?? "the selected chapter"
+                              targetChapter?.title ?? "the unassigned scene list"
                             } using the saved backend order.`
                           : sceneMoveDraft.placement === "end"
                             ? `The scene will be inserted at the end of ${
-                                targetChapter?.title ?? "the selected chapter"
+                                targetChapter?.title ?? "the unassigned scene list"
                               } using the saved backend order.`
                             : sceneMoveDraft.placement === "before"
                               ? `The scene will be inserted before ${
                                   sceneMoveAnchor?.title ?? "the selected scene"
                                 } in ${
-                                  targetChapter?.title ?? "the selected chapter"
+                                  targetChapter?.title ?? "the unassigned scene list"
                                 } using the saved backend order.`
                               : `The scene will be inserted after ${
                                   sceneMoveAnchor?.title ?? "the selected scene"
                                 } in ${
-                                  targetChapter?.title ?? "the selected chapter"
+                                  targetChapter?.title ?? "the unassigned scene list"
                                 } using the saved backend order.`}
                       </p>
                       <div className="flex flex-wrap gap-2">
