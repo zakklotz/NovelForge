@@ -14,6 +14,7 @@ import { CharactersView } from "@/features/characters/CharactersView";
 import { SuggestionsView } from "@/features/suggestions/SuggestionsView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { ScratchpadView } from "@/features/scratchpad/ScratchpadView";
+import { StoryOverviewView } from "@/features/story/StoryOverviewView";
 
 function RootLayout() {
   return (
@@ -41,6 +42,12 @@ const chaptersRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "chapters",
   component: ChaptersView,
+});
+
+const storyRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "story",
+  component: StoryOverviewView,
 });
 
 const chapterDetailRoute = createRoute({
@@ -87,6 +94,7 @@ const settingsRoute = createRoute({
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
+  storyRoute,
   chaptersRoute,
   chapterDetailRoute,
   scenesRoute,

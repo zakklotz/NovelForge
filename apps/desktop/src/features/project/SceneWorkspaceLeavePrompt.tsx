@@ -19,6 +19,9 @@ function describeNavigationTarget(pathname: string) {
   if (pathname === "/scenes") {
     return "return to the scene board";
   }
+  if (pathname === "/story") {
+    return "open Story Spine";
+  }
   if (pathname === "/chapters") {
     return "open Chapters";
   }

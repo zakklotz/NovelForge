@@ -138,6 +138,41 @@ describe("AppRouter loaded project flow", () => {
     queryClient.clear();
   });
 
+  it("restores the story spine route on launch", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/story" as const,
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    expect(window.location.pathname).toBe("/story");
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("restores the last open chapter workspace route on launch", async () => {
     const restoredSnapshot = {
       ...sampleProjectSnapshot,

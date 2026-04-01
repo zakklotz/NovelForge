@@ -16,6 +16,7 @@ describe("project route helpers", () => {
   });
 
   it("keeps valid workspace routes intact", () => {
+    expect(normalizeProjectRoute("/story")).toBe("/story");
     expect(normalizeProjectRoute("/chapters")).toBe("/chapters");
     expect(normalizeProjectRoute("/chapters/chapter-1")).toBe("/chapters/chapter-1");
     expect(normalizeProjectRoute("/scenes")).toBe("/scenes");
@@ -28,6 +29,7 @@ describe("project route helpers", () => {
 
   it("does not persist the transient root route", () => {
     expect(shouldPersistProjectRoute("/")).toBe(false);
+    expect(shouldPersistProjectRoute("/story")).toBe(true);
     expect(shouldPersistProjectRoute("/chapters")).toBe(true);
     expect(shouldPersistProjectRoute("/chapters/chapter-1")).toBe(true);
     expect(shouldPersistProjectRoute("/scratchpad")).toBe(true);

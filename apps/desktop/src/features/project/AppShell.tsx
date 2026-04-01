@@ -3,6 +3,7 @@ import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   BookCopy,
+  ListOrdered,
   MessageSquareText,
   Search,
   Settings2,
@@ -20,14 +21,15 @@ import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { useUiStore } from "@/store/uiStore";
 import { SceneWorkspaceLeavePrompt } from "./SceneWorkspaceLeavePrompt";
 
-type StoryDomain = "chapters" | "scenes" | "characters" | "suggestions";
+type StoryDomain = "story" | "chapters" | "scenes" | "characters" | "suggestions";
 
 const storyDomainTabs: Array<{
   domain: StoryDomain;
-  to: "/chapters" | "/scenes" | "/characters" | "/suggestions";
+  to: "/story" | "/chapters" | "/scenes" | "/characters" | "/suggestions";
   label: string;
   icon: typeof BookCopy;
 }> = [
+  { domain: "story", to: "/story", label: "Story", icon: ListOrdered },
   { domain: "chapters", to: "/chapters", label: "Chapters", icon: BookCopy },
   { domain: "scenes", to: "/scenes", label: "Scenes", icon: Theater },
   { domain: "characters", to: "/characters", label: "Characters", icon: Users },
@@ -40,6 +42,9 @@ const utilityNavigationItems = [
 ];
 
 function getStoryDomainFromPath(pathname: string): StoryDomain | null {
+  if (pathname.startsWith("/story")) {
+    return "story";
+  }
   if (pathname.startsWith("/chapters")) {
     return "chapters";
   }
@@ -218,7 +223,7 @@ export function AppShell({
       );
     }
 
-    if (storyBrowserDomain === "chapters") {
+    if (storyBrowserDomain === "story" || storyBrowserDomain === "chapters") {
       return chapters.length > 0 ? (
         <div className="grid gap-2">
           {chapters.map((chapter) => {

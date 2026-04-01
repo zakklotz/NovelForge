@@ -1,6 +1,7 @@
 import type { ProjectSnapshot } from "@novelforge/domain";
 
 export const TOP_LEVEL_PROJECT_ROUTES = [
+  "/story",
   "/chapters",
   "/scenes",
   "/characters",
