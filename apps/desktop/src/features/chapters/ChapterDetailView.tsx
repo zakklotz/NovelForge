@@ -133,6 +133,8 @@ interface ChapterScenePreview {
 interface ChapterSceneMoveDraft {
   sceneId: string;
   targetChapterId: string;
+  placement: "start" | "end" | "before" | "after";
+  anchorSceneId: string;
 }
 
 interface ProposalOverlapWarning {
@@ -252,6 +254,14 @@ function buildChapterWorkspaceAiContext(
     null,
     2,
   );
+}
+
+function getOrderedScenesInChapter<
+  SceneLike extends { chapterId: string | null; orderIndex: number },
+>(scenes: SceneLike[], chapterId: string | null) {
+  return scenes
+    .filter((scene) => (scene.chapterId ?? null) === chapterId)
+    .sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
 export function ChapterDetailView() {
@@ -416,12 +426,30 @@ export function ChapterDetailView() {
 
   const currentSnapshot = snapshot;
   const currentChapter = chapter;
-  const chapterScenes = currentSnapshot.scenes
-    .filter((scene) => scene.chapterId === currentChapter.id)
-    .sort((left, right) => left.orderIndex - right.orderIndex);
+  const chapterScenes = getOrderedScenesInChapter(
+    currentSnapshot.scenes,
+    currentChapter.id,
+  );
   const otherChapters = [...currentSnapshot.chapters]
     .sort((left, right) => left.orderIndex - right.orderIndex)
     .filter((candidate) => candidate.id !== currentChapter.id);
+  const targetChapterScenes = sceneMoveDraft
+    ? getOrderedScenesInChapter(
+        currentSnapshot.scenes,
+        sceneMoveDraft.targetChapterId,
+      )
+    : [];
+  const targetChapter = sceneMoveDraft
+    ? currentSnapshot.chapters.find(
+        (candidate) => candidate.id === sceneMoveDraft.targetChapterId,
+      ) ?? null
+    : null;
+  const sceneMoveAnchor =
+    sceneMoveDraft && sceneMoveDraft.anchorSceneId
+      ? targetChapterScenes.find(
+          (candidate) => candidate.id === sceneMoveDraft.anchorSceneId,
+        ) ?? null
+      : null;
   const focusedCharacters = currentSnapshot.characters.filter((character) =>
     planning.characterFocusIds.includes(character.id),
   );
@@ -471,6 +499,63 @@ export function ChapterDetailView() {
     setSceneProposalDrafts((currentDrafts) =>
       currentDrafts.filter((draft) => draft.reviewId !== reviewId),
     );
+  }
+
+  function buildSceneMoveDraft(
+    sceneId: string,
+    targetChapterId: string,
+    placement: ChapterSceneMoveDraft["placement"] = "end",
+    anchorSceneId = "",
+  ): ChapterSceneMoveDraft {
+    const nextTargetChapterScenes = getOrderedScenesInChapter(
+      currentSnapshot.scenes,
+      targetChapterId,
+    );
+    const nextPlacement =
+      nextTargetChapterScenes.length === 0 &&
+      (placement === "before" || placement === "after")
+        ? "end"
+        : placement;
+    const nextAnchorSceneId = nextTargetChapterScenes.some(
+      (candidate) => candidate.id === anchorSceneId,
+    )
+      ? anchorSceneId
+      : (nextTargetChapterScenes[0]?.id ?? "");
+
+    return {
+      sceneId,
+      targetChapterId,
+      placement: nextPlacement,
+      anchorSceneId: nextAnchorSceneId,
+    };
+  }
+
+  function getCrossChapterTargetIndex(draft: ChapterSceneMoveDraft) {
+    const nextTargetChapterScenes = getOrderedScenesInChapter(
+      currentSnapshot.scenes,
+      draft.targetChapterId,
+    );
+
+    switch (draft.placement) {
+      case "start":
+        return 0;
+      case "end":
+        return nextTargetChapterScenes.length;
+      case "before": {
+        const anchorIndex = nextTargetChapterScenes.findIndex(
+          (scene) => scene.id === draft.anchorSceneId,
+        );
+        return anchorIndex >= 0 ? anchorIndex : 0;
+      }
+      case "after": {
+        const anchorIndex = nextTargetChapterScenes.findIndex(
+          (scene) => scene.id === draft.anchorSceneId,
+        );
+        return anchorIndex >= 0
+          ? anchorIndex + 1
+          : nextTargetChapterScenes.length;
+      }
+    }
   }
 
   async function saveCurrentWorkspaceChanges() {
@@ -586,10 +671,7 @@ export function ChapterDetailView() {
     setSceneMoveDraft((currentDraft) =>
       currentDraft?.sceneId === sceneId
         ? currentDraft
-        : {
-            sceneId,
-            targetChapterId: otherChapters[0].id,
-          },
+        : buildSceneMoveDraft(sceneId, otherChapters[0].id),
     );
   }
 
@@ -603,9 +685,7 @@ export function ChapterDetailView() {
     }
 
     const targetChapterId = sceneMoveDraft.targetChapterId;
-    const targetIndex = currentSnapshot.scenes.filter(
-      (scene) => scene.chapterId === targetChapterId,
-    ).length;
+    const targetIndex = getCrossChapterTargetIndex(sceneMoveDraft);
 
     setSceneMoveError(null);
     setMovingSceneId(sceneId);
@@ -1270,10 +1350,12 @@ export function ChapterDetailView() {
                           onChange={(event) =>
                             setSceneMoveDraft((currentDraft) =>
                               currentDraft?.sceneId === scene.id
-                                ? {
-                                    ...currentDraft,
-                                    targetChapterId: event.target.value,
-                                  }
+                                ? buildSceneMoveDraft(
+                                    scene.id,
+                                    event.target.value,
+                                    currentDraft.placement,
+                                    currentDraft.anchorSceneId,
+                                  )
                                 : currentDraft,
                             )
                           }
@@ -1285,9 +1367,82 @@ export function ChapterDetailView() {
                           ))}
                         </Select>
                       </Field>
+                      <Field label="Insert Position">
+                        <Select
+                          value={sceneMoveDraft.placement}
+                          onChange={(event) =>
+                            setSceneMoveDraft((currentDraft) =>
+                              currentDraft?.sceneId === scene.id
+                                ? buildSceneMoveDraft(
+                                    scene.id,
+                                    currentDraft.targetChapterId,
+                                    event.target.value as ChapterSceneMoveDraft["placement"],
+                                    currentDraft.anchorSceneId,
+                                  )
+                                : currentDraft,
+                            )
+                          }
+                        >
+                          <option value="start">At chapter beginning</option>
+                          <option value="end">At chapter end</option>
+                          {targetChapterScenes.length > 0 ? (
+                            <>
+                              <option value="before">Before selected scene</option>
+                              <option value="after">After selected scene</option>
+                            </>
+                          ) : null}
+                        </Select>
+                      </Field>
+                      {sceneMoveDraft.placement === "before" ||
+                      sceneMoveDraft.placement === "after" ? (
+                        <Field
+                          label={
+                            sceneMoveDraft.placement === "before"
+                              ? "Before Scene"
+                              : "After Scene"
+                          }
+                        >
+                          <Select
+                            value={sceneMoveDraft.anchorSceneId}
+                            onChange={(event) =>
+                              setSceneMoveDraft((currentDraft) =>
+                                currentDraft?.sceneId === scene.id
+                                  ? {
+                                      ...currentDraft,
+                                      anchorSceneId: event.target.value,
+                                    }
+                                  : currentDraft,
+                              )
+                            }
+                          >
+                            {targetChapterScenes.map((candidate, targetIndex) => (
+                              <option key={candidate.id} value={candidate.id}>
+                                {targetIndex + 1}. {candidate.title}
+                              </option>
+                            ))}
+                          </Select>
+                        </Field>
+                      ) : null}
                       <p className="text-sm text-[var(--ink-muted)]">
-                        The scene will be inserted at the end of the selected chapter
-                        using the saved backend order.
+                        {sceneMoveDraft.placement === "start"
+                          ? `The scene will be inserted at the beginning of ${
+                              targetChapter?.title ?? "the selected chapter"
+                            } using the saved backend order.`
+                          : sceneMoveDraft.placement === "end"
+                            ? `The scene will be inserted at the end of ${
+                                targetChapter?.title ?? "the selected chapter"
+                              } using the saved backend order.`
+                            : sceneMoveDraft.placement === "before"
+                              ? `The scene will be inserted before ${
+                                  sceneMoveAnchor?.title ?? "the selected scene"
+                                } in ${
+                                  targetChapter?.title ?? "the selected chapter"
+                                } using the saved backend order.`
+                              : `The scene will be inserted after ${
+                                  sceneMoveAnchor?.title ?? "the selected scene"
+                                } in ${
+                                  targetChapter?.title ?? "the selected chapter"
+                                } using the saved backend order.`}
                       </p>
                       <div className="flex flex-wrap gap-2">
                         <Button
@@ -1303,7 +1458,7 @@ export function ChapterDetailView() {
                           onClick={() => void handleMoveSceneToChapter(scene.id)}
                           disabled={movingSceneId === scene.id}
                         >
-                          Move to Chapter End
+                          Move Scene
                         </Button>
                       </div>
                     </div>

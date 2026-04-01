@@ -284,7 +284,7 @@ describe("Chapter workspace", () => {
     queryClient.clear();
   });
 
-  it("moves a scene to a different chapter through the backend move command", async () => {
+  it("moves a scene to a different chapter and inserts at chapter end by default", async () => {
     const { unmount, queryClient } = renderRouter();
 
     await waitFor(() => {
@@ -300,8 +300,9 @@ describe("Chapter workspace", () => {
     expect(
       screen.getByDisplayValue("Chapter 2: Border Sparks"),
     ).toBeTruthy();
+    expect(screen.getByDisplayValue("At chapter end")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /move to chapter end/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
 
     await waitFor(() => {
       expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
@@ -318,6 +319,96 @@ describe("Chapter workspace", () => {
       expect(screen.queryByText("Dock Nine Exchange")).toBeNull();
     });
     expect(screen.getByText("The Crate Speaks")).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a scene to the beginning of a different chapter through the backend move command", async () => {
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "start" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-2",
+      targetIndex: 0,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves a scene after a selected target scene through the backend move command", async () => {
+    const targetAnchor = currentSnapshot.scenes.find((scene) => scene.id === "scene-3");
+    if (!targetAnchor) {
+      throw new Error("Expected chapter 2 anchor scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...targetAnchor,
+          id: "scene-4",
+          orderIndex: 1,
+          title: "Signal Fire",
+          summary: "A second target scene gives the move flow a middle insertion point.",
+          purpose: "Hold the line after the border check.",
+          dependencySceneIds: ["scene-3"],
+        },
+      ],
+    };
+
+    const { unmount, queryClient } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Scene Plan")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange to another chapter/i,
+      }),
+    );
+
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "after" },
+    });
+    fireEvent.change(screen.getByLabelText(/after scene/i), {
+      target: { value: "scene-3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
+    });
 
     unmount();
     queryClient.clear();
@@ -429,7 +520,7 @@ describe("Chapter workspace", () => {
         name: /move dock nine exchange to another chapter/i,
       }),
     );
-    fireEvent.click(screen.getByRole("button", { name: /move to chapter end/i }));
+    fireEvent.click(screen.getByRole("button", { name: /^move scene$/i }));
 
     await waitFor(() => {
       expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
