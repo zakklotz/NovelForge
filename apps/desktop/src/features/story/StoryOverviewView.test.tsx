@@ -172,6 +172,21 @@ function moveSceneInSnapshot(
   };
 }
 
+function createDeferredPromise<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+
+  return {
+    promise,
+    reject,
+    resolve,
+  };
+}
+
 function createStoryDiagnosticResponse() {
   return {
     providerId: "gemini",
@@ -1095,6 +1110,96 @@ describe("StoryOverviewView", () => {
     queryClient.clear();
   });
 
+  it("shows inline updating state and disables nearby controls while an unassigned reorder is pending", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned-1", 0, "Ashfall Detour"),
+        createUnassignedScene("scene-unassigned-2", 1, "Glass Harbor"),
+      ],
+    };
+
+    const pendingMove = createDeferredPromise<void>();
+    tauriApiMock.moveScene.mockImplementationOnce(async (input) => {
+      await pendingMove.promise;
+      currentSnapshot = moveSceneInSnapshot(
+        currentSnapshot,
+        input.sceneId,
+        input.targetChapterId ?? null,
+        input.targetIndex,
+      );
+
+      return currentSnapshot.scenes.find((scene) => scene.id === input.sceneId)!;
+    });
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    const laterButton = screen.getByRole("button", {
+      name: /move ashfall detour later in unassigned/i,
+    });
+    const sceneCard = laterButton.closest("div.rounded-3xl");
+    if (!(sceneCard instanceof HTMLElement)) {
+      throw new Error("Expected unassigned Story Spine scene card for Ashfall Detour.");
+    }
+
+    fireEvent.click(laterButton);
+
+    await waitFor(() => {
+      expect(within(sceneCard).getByRole("status").textContent).toContain(
+        "Updating order...",
+      );
+    });
+
+    expect(sceneCard.getAttribute("aria-busy")).toBe("true");
+    expect(
+      (
+        within(sceneCard).getByRole("button", {
+          name: /move ashfall detour earlier in unassigned/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (
+        within(sceneCard).getByRole("button", {
+          name: /move ashfall detour later in unassigned/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByLabelText(/move into chapter/i) as HTMLSelectElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByLabelText(/insert position/i) as HTMLSelectElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByRole("button", { name: "Move to Chapter" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        within(sceneCard).getByRole("button", {
+          name: /open ashfall detour/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    pendingMove.resolve();
+
+    await waitFor(() => {
+      expect(screen.queryByText("Updating order...")).toBeNull();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("moves an unassigned scene into a chapter end by default through the backend move command", async () => {
     currentSnapshot = {
       ...currentSnapshot,
@@ -1441,6 +1546,78 @@ describe("StoryOverviewView", () => {
       sceneId: "scene-1",
       targetChapterId: "chapter-2",
       targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("shows inline updating state and disables the chapter move panel while a move is pending", async () => {
+    const pendingMove = createDeferredPromise<void>();
+    tauriApiMock.moveScene.mockImplementationOnce(async (input) => {
+      await pendingMove.promise;
+      currentSnapshot = moveSceneInSnapshot(
+        currentSnapshot,
+        input.sceneId,
+        input.targetChapterId ?? null,
+        input.targetIndex,
+      );
+
+      return currentSnapshot.scenes.find((scene) => scene.id === input.sceneId)!;
+    });
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    const moveButton = screen.getByRole("button", {
+      name: /move dock nine exchange to another chapter or unassigned/i,
+    });
+    const sceneCard = moveButton.closest("div.rounded-2xl");
+    if (!(sceneCard instanceof HTMLElement)) {
+      throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
+    }
+
+    fireEvent.click(moveButton);
+    fireEvent.click(within(sceneCard).getByRole("button", { name: "Move Scene" }));
+
+    await waitFor(() => {
+      expect(within(sceneCard).getByRole("status").textContent).toContain(
+        "Updating placement...",
+      );
+    });
+
+    expect(sceneCard.getAttribute("aria-busy")).toBe("true");
+    expect(
+      (within(sceneCard).getByLabelText(/move destination/i) as HTMLSelectElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByLabelText(/insert position/i) as HTMLSelectElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByRole("button", { name: "Cancel" }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (within(sceneCard).getByRole("button", { name: "Moving..." }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        within(sceneCard).getByRole("button", {
+          name: /move dock nine exchange later in chapter 1: the wrong package/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    pendingMove.resolve();
+
+    await waitFor(() => {
+      expect(screen.queryByText("Updating placement...")).toBeNull();
     });
 
     unmount();

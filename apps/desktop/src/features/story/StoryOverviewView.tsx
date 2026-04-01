@@ -35,6 +35,7 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { createId } from "@/lib/ids";
+import { cn } from "@/lib/utils";
 import { useUiStore } from "@/store/uiStore";
 
 type DiagnosticTone = "default" | "accent" | "warning" | "danger";
@@ -71,6 +72,11 @@ interface ChapterSceneMoveDraft {
   targetChapterId: string | null;
   placement: SceneMovePlacement;
   anchorSceneId: string;
+}
+
+interface StorySpineSceneUpdateState {
+  sceneId: string;
+  action: "reorder" | "move";
 }
 
 const UNASSIGNED_DESTINATION_VALUE = "__unassigned__";
@@ -569,6 +575,12 @@ function shouldShowStoryDiagnosticSection(
   return sectionKey !== "endingDirectionPreparation" || hasMeaningfulEndingDirection(project);
 }
 
+function getStorySpineSceneUpdateLabel(
+  action: StorySpineSceneUpdateState["action"],
+) {
+  return action === "reorder" ? "Updating order..." : "Updating placement...";
+}
+
 export function StoryOverviewView() {
   const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
@@ -603,10 +615,12 @@ export function StoryOverviewView() {
     useState<StructuredAiResponse | null>(null);
   const [isAnalyzingStory, setIsAnalyzingStory] = useState(false);
   const [storyDiagnosticError, setStoryDiagnosticError] = useState<string | null>(null);
-  const [movingChapterSceneId, setMovingChapterSceneId] = useState<string | null>(null);
+  const [movingChapterScene, setMovingChapterScene] =
+    useState<StorySpineSceneUpdateState | null>(null);
   const [chapterSceneMoveDraft, setChapterSceneMoveDraft] =
     useState<ChapterSceneMoveDraft | null>(null);
-  const [movingUnassignedSceneId, setMovingUnassignedSceneId] = useState<string | null>(null);
+  const [movingUnassignedScene, setMovingUnassignedScene] =
+    useState<StorySpineSceneUpdateState | null>(null);
   const [unassignedMoveDrafts, setUnassignedMoveDrafts] = useState<
     Record<string, UnassignedSceneMoveDraft>
   >({});
@@ -742,8 +756,8 @@ export function StoryOverviewView() {
   const isMutatingStructure =
     isAddingChapter ||
     movingChapterId !== null ||
-    movingChapterSceneId !== null ||
-    movingUnassignedSceneId !== null;
+    movingChapterScene !== null ||
+    movingUnassignedScene !== null;
   const hasVisiblePlanningEntries =
     filteredChapters.length > 0 || filteredUnassignedScenes.length > 0;
   const chapterSceneMoveTargetScenes = chapterSceneMoveDraft
@@ -1004,7 +1018,10 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
-    setMovingUnassignedSceneId(sceneId);
+    setMovingUnassignedScene({
+      sceneId,
+      action: "reorder",
+    });
 
     try {
       await moveScene({
@@ -1020,7 +1037,7 @@ export function StoryOverviewView() {
           : "NovelForge could not update the unassigned scene order.",
       );
     } finally {
-      setMovingUnassignedSceneId(null);
+      setMovingUnassignedScene(null);
     }
   }
 
@@ -1033,7 +1050,10 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
-    setMovingUnassignedSceneId(sceneId);
+    setMovingUnassignedScene({
+      sceneId,
+      action: "move",
+    });
 
     try {
       await moveScene({
@@ -1049,7 +1069,7 @@ export function StoryOverviewView() {
           : "NovelForge could not place this scene onto the story spine.",
       );
     } finally {
-      setMovingUnassignedSceneId(null);
+      setMovingUnassignedScene(null);
     }
   }
 
@@ -1082,7 +1102,10 @@ export function StoryOverviewView() {
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
     setChapterSceneMoveDraft(null);
-    setMovingChapterSceneId(sceneId);
+    setMovingChapterScene({
+      sceneId,
+      action: "reorder",
+    });
 
     try {
       await moveScene({
@@ -1098,7 +1121,7 @@ export function StoryOverviewView() {
           : "NovelForge could not reorder this scene within the chapter.",
       );
     } finally {
-      setMovingChapterSceneId(null);
+      setMovingChapterScene(null);
     }
   }
 
@@ -1128,7 +1151,10 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
-    setMovingChapterSceneId(sceneId);
+    setMovingChapterScene({
+      sceneId,
+      action: "move",
+    });
 
     try {
       await moveScene({
@@ -1145,7 +1171,7 @@ export function StoryOverviewView() {
           : "NovelForge could not move this scene to the selected destination.",
       );
     } finally {
-      setMovingChapterSceneId(null);
+      setMovingChapterScene(null);
     }
   }
 
@@ -1704,11 +1730,24 @@ export function StoryOverviewView() {
                             (candidate) => candidate.id === moveDraft.anchorSceneId,
                           ) ?? null
                         : null;
+                    const isUpdatingUnassignedScene =
+                      movingUnassignedScene?.sceneId === scene.id;
+                    const unassignedSceneUpdateAction = isUpdatingUnassignedScene
+                      ? movingUnassignedScene.action
+                      : null;
+                    const unassignedSceneUpdateLabel = unassignedSceneUpdateAction
+                      ? getStorySpineSceneUpdateLabel(unassignedSceneUpdateAction)
+                      : null;
 
                     return (
                       <div
                         key={scene.id}
-                        className="rounded-3xl border border-black/8 bg-white/80 px-4 py-4"
+                        className={cn(
+                          "rounded-3xl border border-black/8 bg-white/80 px-4 py-4 transition-colors",
+                          isUpdatingUnassignedScene &&
+                            "border-[color:rgba(184,88,63,0.22)] bg-[color:rgba(184,88,63,0.06)]",
+                        )}
+                        aria-busy={isUpdatingUnassignedScene}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="min-w-0">
@@ -1780,6 +1819,7 @@ export function StoryOverviewView() {
                               >
                                 <Select
                                   value={targetChapterId}
+                                  disabled={isMutatingStructure}
                                   onChange={(event) =>
                                     setUnassignedMoveDrafts((currentDrafts) => ({
                                       ...currentDrafts,
@@ -1802,6 +1842,7 @@ export function StoryOverviewView() {
                               <Field label="Insert Position">
                                 <Select
                                   value={moveDraft?.placement ?? "end"}
+                                  disabled={isMutatingStructure}
                                   onChange={(event) =>
                                     setUnassignedMoveDrafts((currentDrafts) => ({
                                       ...currentDrafts,
@@ -1828,7 +1869,9 @@ export function StoryOverviewView() {
                                 onClick={() => void handleAssignUnassignedScene(scene.id)}
                                 disabled={!targetChapterId || isMutatingStructure}
                               >
-                                Move to Chapter
+                                {unassignedSceneUpdateAction === "move"
+                                  ? "Moving..."
+                                  : "Move to Chapter"}
                               </Button>
                             </div>
 
@@ -1844,6 +1887,7 @@ export function StoryOverviewView() {
                                 >
                                   <Select
                                     value={moveDraft.anchorSceneId}
+                                    disabled={isMutatingStructure}
                                     onChange={(event) =>
                                       setUnassignedMoveDrafts((currentDrafts) => ({
                                         ...currentDrafts,
@@ -1881,6 +1925,15 @@ export function StoryOverviewView() {
                             scene onto the spine.
                           </div>
                         )}
+                        {unassignedSceneUpdateLabel ? (
+                          <p
+                            role="status"
+                            className="mt-4 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]"
+                          >
+                            <RefreshCw className="size-3.5 animate-spin" />
+                            {unassignedSceneUpdateLabel}
+                          </p>
+                        ) : null}
                       </div>
                     );
                   })}
@@ -2032,6 +2085,14 @@ export function StoryOverviewView() {
                               currentSceneIndex === scenes.length - 1;
                             const isMovingChapterScene =
                               chapterSceneMoveDraft?.sceneId === scene.id;
+                            const isUpdatingChapterScene =
+                              movingChapterScene?.sceneId === scene.id;
+                            const chapterSceneUpdateAction = isUpdatingChapterScene
+                              ? movingChapterScene.action
+                              : null;
+                            const chapterSceneUpdateLabel = chapterSceneUpdateAction
+                              ? getStorySpineSceneUpdateLabel(chapterSceneUpdateAction)
+                              : null;
                             const targetChapterScenes = isMovingChapterScene
                               ? chapterSceneMoveTargetScenes
                               : [];
@@ -2045,7 +2106,12 @@ export function StoryOverviewView() {
                             return (
                               <div
                                 key={scene.id}
-                                className="rounded-2xl border border-black/8 bg-white/72 px-4 py-3"
+                                className={cn(
+                                  "rounded-2xl border border-black/8 bg-white/72 px-4 py-3 transition-colors",
+                                  isUpdatingChapterScene &&
+                                    "border-[color:rgba(184,88,63,0.22)] bg-[color:rgba(184,88,63,0.06)]",
+                                )}
+                                aria-busy={isUpdatingChapterScene}
                               >
                                 <div className="flex items-start justify-between gap-3">
                                   <div className="min-w-0">
@@ -2144,6 +2210,7 @@ export function StoryOverviewView() {
                                             chapterSceneMoveDraft.targetChapterId ??
                                             UNASSIGNED_DESTINATION_VALUE
                                           }
+                                          disabled={isMutatingStructure}
                                           onChange={(event) =>
                                             setChapterSceneMoveDraft((currentDraft) =>
                                               currentDraft?.sceneId === scene.id
@@ -2181,6 +2248,7 @@ export function StoryOverviewView() {
                                       <Field label="Insert Position">
                                         <Select
                                           value={chapterSceneMoveDraft.placement}
+                                          disabled={isMutatingStructure}
                                           onChange={(event) =>
                                             setChapterSceneMoveDraft((currentDraft) =>
                                               currentDraft?.sceneId === scene.id
@@ -2224,6 +2292,7 @@ export function StoryOverviewView() {
                                         >
                                           <Select
                                             value={chapterSceneMoveDraft.anchorSceneId}
+                                            disabled={isMutatingStructure}
                                             onChange={(event) =>
                                               setChapterSceneMoveDraft((currentDraft) =>
                                                 currentDraft?.sceneId === scene.id
@@ -2267,7 +2336,7 @@ export function StoryOverviewView() {
                                         type="button"
                                         variant="ghost"
                                         onClick={handleCancelChapterSceneMove}
-                                        disabled={movingChapterSceneId === scene.id}
+                                        disabled={isUpdatingChapterScene}
                                       >
                                         Cancel
                                       </Button>
@@ -2278,10 +2347,21 @@ export function StoryOverviewView() {
                                         }
                                         disabled={isMutatingStructure}
                                       >
-                                        Move Scene
+                                        {chapterSceneUpdateAction === "move"
+                                          ? "Moving..."
+                                          : "Move Scene"}
                                       </Button>
                                     </div>
                                   </div>
+                                ) : null}
+                                {chapterSceneUpdateLabel ? (
+                                  <p
+                                    role="status"
+                                    className="mt-4 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]"
+                                  >
+                                    <RefreshCw className="size-3.5 animate-spin" />
+                                    {chapterSceneUpdateLabel}
+                                  </p>
                                 ) : null}
                               </div>
                             );
