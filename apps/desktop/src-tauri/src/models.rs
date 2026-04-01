@@ -353,13 +353,32 @@ pub struct StoryDiagnosticEntry {
     pub related: Vec<DomainObjectRef>,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum StoryBriefAlignment {
+    Support,
+    #[default]
+    WeakSupport,
+    Risk,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StoryBriefAlignmentNote {
+    pub title: String,
+    pub detail: String,
+    pub alignment: StoryBriefAlignment,
+    pub focus: Option<DomainObjectRef>,
+    pub related: Vec<DomainObjectRef>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryStructureDiagnostic {
     pub underdefined_chapters: Vec<StoryDiagnosticEntry>,
     pub redundant_functions: Vec<StoryDiagnosticEntry>,
     pub missing_transitions: Vec<StoryDiagnosticEntry>,
-    pub brief_alignment_notes: Vec<StoryDiagnosticEntry>,
+    pub brief_alignment_notes: Vec<StoryBriefAlignmentNote>,
     pub next_planning_targets: Vec<StoryDiagnosticEntry>,
 }
 

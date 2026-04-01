@@ -184,11 +184,21 @@ export const storyDiagnosticEntrySchema = z.object({
 
 export type StoryDiagnosticEntry = z.infer<typeof storyDiagnosticEntrySchema>;
 
+export const storyBriefAlignmentSchema = z.enum(["support", "weak_support", "risk"]);
+
+export type StoryBriefAlignment = z.infer<typeof storyBriefAlignmentSchema>;
+
+export const storyBriefAlignmentNoteSchema = storyDiagnosticEntrySchema.extend({
+  alignment: storyBriefAlignmentSchema,
+});
+
+export type StoryBriefAlignmentNote = z.infer<typeof storyBriefAlignmentNoteSchema>;
+
 export const storyStructureDiagnosticSchema = z.object({
   underdefinedChapters: z.array(storyDiagnosticEntrySchema).default([]),
   redundantFunctions: z.array(storyDiagnosticEntrySchema).default([]),
   missingTransitions: z.array(storyDiagnosticEntrySchema).default([]),
-  briefAlignmentNotes: z.array(storyDiagnosticEntrySchema).default([]),
+  briefAlignmentNotes: z.array(storyBriefAlignmentNoteSchema).default([]),
   nextPlanningTargets: z.array(storyDiagnosticEntrySchema).default([]),
 });
 

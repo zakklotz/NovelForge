@@ -179,6 +179,37 @@ function createStoryDiagnosticResponse() {
         ],
         briefAlignmentNotes: [
           {
+            alignment: "support",
+            title: "Chapter 1 clearly supports the brief's premise",
+            detail:
+              "Ava taking possession of the package already gives the spine visible evidence of the reluctant-guardian setup.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-1",
+              title: "Chapter 1: The Wrong Package",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-1",
+                title: "Dock Nine Exchange",
+              },
+            ],
+          },
+          {
+            alignment: "weak_support",
+            title: "Chapter 2 only lightly supports the tonal promise",
+            detail:
+              "The checkpoint tension hints at the brief's wonder-struck danger, but the spine still gives that atmosphere limited room to breathe.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [],
+          },
+          {
+            alignment: "risk",
             title: "Chapter 2 under-supports Ava's responsibility turn",
             detail:
               "The border material carries external pressure, but the current spine still gives limited support to the brief's stewardship-over-escape arc.",
@@ -533,6 +564,10 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Missing Transitions")).toBeTruthy();
     expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
+    expect(screen.getByText("Support")).toBeTruthy();
+    expect(screen.getByText("Weak support")).toBeTruthy();
+    expect(screen.getByText("Risk")).toBeTruthy();
+    expect(screen.getByText("Chapter 1 clearly supports the brief's premise")).toBeTruthy();
     expect(screen.getByText("Chapter 2 needs a clearer chapter-level turn")).toBeTruthy();
     expect(screen.getByText("Chapter 2 under-supports Ava's responsibility turn")).toBeTruthy();
     expect(

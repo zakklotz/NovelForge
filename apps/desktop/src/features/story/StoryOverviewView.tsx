@@ -6,6 +6,7 @@ import type {
   Project,
   ProjectSnapshot,
   Scene,
+  StoryBriefAlignmentNote,
   StoryStructureDiagnostic,
   StructuredAiResponse,
 } from "@novelforge/domain";
@@ -338,8 +339,8 @@ const storyDiagnosticSections: Array<{
     key: "briefAlignmentNotes",
     title: "Story Brief Alignment",
     description:
-      "Places where the current spine visibly supports or under-supports the saved story intent.",
-    emptyMessage: "No meaningful story-brief alignment notes surfaced in this review pass.",
+      "Places where the current spine supports, weakly supports, or risks drifting from the saved story intent.",
+    emptyMessage: "No meaningful story-brief support or risk notes surfaced in this review pass.",
     tone: "accent",
   },
   {
@@ -429,6 +430,22 @@ function buildStoryReferenceJumpTargets(
   });
 
   return jumpTargets;
+}
+
+function buildStoryBriefAlignmentBadge(
+  note: StoryBriefAlignmentNote,
+): {
+  label: string;
+  tone: DiagnosticTone;
+} {
+  switch (note.alignment) {
+    case "support":
+      return { label: "Support", tone: "accent" };
+    case "risk":
+      return { label: "Risk", tone: "danger" };
+    default:
+      return { label: "Weak support", tone: "warning" };
+  }
 }
 
 export function StoryOverviewView() {
@@ -1124,15 +1141,26 @@ export function StoryOverviewView() {
                           chapterById,
                           sceneById,
                         );
+                        const briefAlignmentBadge =
+                          section.key === "briefAlignmentNotes"
+                            ? buildStoryBriefAlignmentBadge(entry as StoryBriefAlignmentNote)
+                            : null;
 
                         return (
                           <div
                             key={`${section.key}-${entry.title}-${index}`}
                             className="rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
                           >
-                            <p className="text-sm font-semibold text-[var(--ink)]">
-                              {entry.title}
-                            </p>
+                            <div className="flex flex-wrap items-center gap-2">
+                              {briefAlignmentBadge ? (
+                                <Badge tone={briefAlignmentBadge.tone}>
+                                  {briefAlignmentBadge.label}
+                                </Badge>
+                              ) : null}
+                              <p className="text-sm font-semibold text-[var(--ink)]">
+                                {entry.title}
+                              </p>
+                            </div>
                             <p className="mt-2 text-sm leading-6 text-[var(--ink-muted)]">
                               {entry.detail ||
                                 "Review this area in the existing chapter and scene workspaces."}

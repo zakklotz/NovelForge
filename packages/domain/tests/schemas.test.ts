@@ -112,6 +112,7 @@ describe("domain schemas", () => {
                 title: "Chapter 2 under-supports the story's intended character turn",
                 detail:
                   "The spine carries external pressure, but the saved brief's responsibility arc is still lightly supported on the page.",
+                alignment: "risk",
                 focus: {
                   kind: "chapter",
                   id: "chapter-2",

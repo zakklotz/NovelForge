@@ -11,8 +11,9 @@ use crate::models::{
     Chapter, ChapterProposal, Character, CharacterProposal, ProjectSnapshot,
     ProviderConnectionResult, RecommendedModel, Relationship, RunScratchpadChatInput,
     RunStructuredAIActionInput, Scene, SceneProposal, ScratchpadChatResponse, ScratchpadMessage,
-    ScratchpadProjectContext, ScratchpadResult, StoryDiagnosticEntry, StoryStructureDiagnostic,
-    StructuredAIResponse, StructuredAIResult, TestProviderConnectionInput,
+    ScratchpadProjectContext, ScratchpadResult, StoryBriefAlignment,
+    StoryBriefAlignmentNote, StoryDiagnosticEntry, StoryStructureDiagnostic, StructuredAIResponse,
+    StructuredAIResult, TestProviderConnectionInput,
 };
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -202,6 +203,8 @@ struct RawStoryDiagnosticEntry {
     title: String,
     #[serde(default)]
     detail: String,
+    #[serde(default)]
+    alignment: String,
     #[serde(default)]
     focus: Option<RawDomainObjectRef>,
     #[serde(default)]
@@ -910,6 +913,7 @@ Return JSON only with this exact top-level shape:\n\
       \"briefAlignmentNotes\": [{{\n\
         \"title\": \"\",\n\
         \"detail\": \"\",\n\
+        \"alignment\": \"support\",\n\
         \"focus\": null,\n\
         \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
       }}],\n\
@@ -932,6 +936,7 @@ Rules:\n\
 - For storyStructureDiagnostic entries, use chapter or scene refs whenever the issue points to a specific part of the spine.\n\
 - Keep storyStructureDiagnostic entries short, concrete, and review-oriented.\n\
 - In briefAlignmentNotes, mention the saved story-brief element only when it adds useful planning signal.\n\
+- In briefAlignmentNotes, set alignment to support, weak_support, or risk.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -968,7 +973,10 @@ Task:\n\
 - Use result.storyStructureDiagnostic.missingTransitions for missing handoffs, consequence beats, bridge scenes, or chapter-to-chapter transitions.\n\
 - Use result.storyStructureDiagnostic.briefAlignmentNotes for the clearest places where the current spine either supports the saved story brief or seems to underserve it.\n\
 - In briefAlignmentNotes, explicitly connect the note to the relevant saved brief anchor when useful, such as premise, central conflict, thematic intent, ending direction, genre, or tone.\n\
+- In briefAlignmentNotes, use alignment support when the spine already gives clear concrete evidence of the saved brief, weak_support when the alignment is present but still partial or lightly evidenced, and risk when the spine seems to underserve, drift from, or potentially misread the saved brief.\n\
+- Only add a briefAlignmentNote when that alignment label is clearly justified by the current structure and the saved brief.\n\
 - Keep briefAlignmentNotes selective and planning-oriented: 0 to 3 entries, only when the saved brief has enough signal.\n\
+- If the saved brief is sparse, generic, or not materially relevant to the current structure, leave briefAlignmentNotes empty.\n\
 - Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
 - Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
 - Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
@@ -1185,6 +1193,38 @@ fn map_story_diagnostic_entry(raw: RawStoryDiagnosticEntry) -> Option<StoryDiagn
     })
 }
 
+fn map_story_brief_alignment(raw: &str) -> StoryBriefAlignment {
+    let normalized = raw
+        .trim()
+        .to_ascii_lowercase()
+        .replace('-', "_")
+        .replace(' ', "_");
+    match normalized.as_str() {
+        "support" => StoryBriefAlignment::Support,
+        "risk" => StoryBriefAlignment::Risk,
+        _ => StoryBriefAlignment::WeakSupport,
+    }
+}
+
+fn map_story_brief_alignment_note(raw: RawStoryDiagnosticEntry) -> Option<StoryBriefAlignmentNote> {
+    let title = raw.title.trim().to_string();
+    if title.is_empty() {
+        return None;
+    }
+
+    Some(StoryBriefAlignmentNote {
+        title,
+        detail: raw.detail.trim().to_string(),
+        alignment: map_story_brief_alignment(&raw.alignment),
+        focus: raw.focus.and_then(map_story_reference),
+        related: raw
+            .related
+            .into_iter()
+            .filter_map(map_story_reference)
+            .collect(),
+    })
+}
+
 fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStructureDiagnostic {
     StoryStructureDiagnostic {
         underdefined_chapters: raw
@@ -1205,7 +1245,7 @@ fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStru
         brief_alignment_notes: raw
             .brief_alignment_notes
             .into_iter()
-            .filter_map(map_story_diagnostic_entry)
+            .filter_map(map_story_brief_alignment_note)
             .collect(),
         next_planning_targets: raw
             .next_planning_targets
@@ -1826,6 +1866,7 @@ mod tests {
         {
           "title": "Chapter 2 under-supports Ava's responsibility turn",
           "detail": "The checkpoint pressure fits the premise, but the spine still gives limited evidence of Ava choosing stewardship over escape.",
+          "alignment": "risk",
           "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
           "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
         }
@@ -1873,6 +1914,10 @@ mod tests {
             1
         );
         assert_eq!(
+            result.story_structure_diagnostic.brief_alignment_notes[0].alignment,
+            StoryBriefAlignment::Risk
+        );
+        assert_eq!(
             result
                 .story_structure_diagnostic
                 .next_planning_targets
@@ -1909,6 +1954,10 @@ mod tests {
         assert!(prompt.contains("Central conflict: Ava must keep the map alive"));
         assert!(prompt.contains("Evaluate structural concerns in light of the saved story brief"));
         assert!(prompt.contains("Do not force every brief field into the diagnosis."));
+        assert!(prompt.contains(
+            "use alignment support when the spine already gives clear concrete evidence"
+        ));
+        assert!(prompt.contains("If the saved brief is sparse, generic, or not materially relevant"));
     }
 
     #[test]
