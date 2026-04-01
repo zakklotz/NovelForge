@@ -11,9 +11,9 @@ use crate::models::{
     Chapter, ChapterProposal, Character, CharacterProposal, ProjectSnapshot,
     ProviderConnectionResult, RecommendedModel, Relationship, RunScratchpadChatInput,
     RunStructuredAIActionInput, Scene, SceneProposal, ScratchpadChatResponse, ScratchpadMessage,
-    ScratchpadProjectContext, ScratchpadResult, StoryBriefAlignment,
-    StoryBriefAlignmentNote, StoryDiagnosticEntry, StoryStructureDiagnostic, StructuredAIResponse,
-    StructuredAIResult, TestProviderConnectionInput,
+    ScratchpadProjectContext, ScratchpadResult, StoryBriefAlignment, StoryBriefAlignmentNote,
+    StoryDiagnosticEntry, StoryStructureDiagnostic, StructuredAIResponse, StructuredAIResult,
+    TestProviderConnectionInput,
 };
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -224,6 +224,8 @@ struct RawStoryStructureDiagnostic {
     brief_alignment_notes: Vec<RawStoryDiagnosticEntry>,
     #[serde(default)]
     ending_direction_preparation: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
+    setup_payoff_support: Vec<RawStoryDiagnosticEntry>,
     #[serde(default)]
     next_planning_targets: Vec<RawStoryDiagnosticEntry>,
 }
@@ -925,6 +927,12 @@ Return JSON only with this exact top-level shape:\n\
         \"focus\": null,\n\
         \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
       }}],\n\
+      \"setupPayoffSupport\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
       \"nextPlanningTargets\": [{{\n\
         \"title\": \"\",\n\
         \"detail\": \"\",\n\
@@ -947,6 +955,8 @@ Rules:\n\
 - In briefAlignmentNotes, set alignment to support, weak_support, or risk.\n\
 - In endingDirectionPreparation, add 0 to 3 planning-oriented notes about whether the current spine is preparing the saved ending direction only when that ending target is specific enough to matter.\n\
 - If the saved brief has no meaningful ending direction, leave endingDirectionPreparation empty.\n\
+- In setupPayoffSupport, add 0 to 3 planning-oriented notes about thin setup, expected payoff targets, or groundwork that may need reinforcement when a meaningful setup/payoff thread is apparent.\n\
+- If there is not enough evidence of a meaningful setup/payoff thread, leave setupPayoffSupport empty.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -991,6 +1001,10 @@ Task:\n\
 - Only add an endingDirectionPreparation note when the saved brief includes a meaningful ending target and the current spine gives enough evidence to judge the setup.\n\
 - Keep endingDirectionPreparation selective and review-only: 0 to 3 entries focused on setup, payoff preparation, or missing groundwork rather than rewriting the ending itself.\n\
 - If the saved brief has no meaningful ending direction, or the ending target is too generic to use well, leave endingDirectionPreparation empty.\n\
+- Use result.storyStructureDiagnostic.setupPayoffSupport for narrow planning notes about setups, promises, callbacks, or likely payoff targets that may need clearer groundwork or stronger support.\n\
+- Only add a setupPayoffSupport note when the current structure gives enough evidence of an actual setup/payoff thread, such as a planted promise, a chapter setupPayoffNotes thread, or an implied later resolution.\n\
+- Keep setupPayoffSupport selective and review-only: 0 to 3 entries focused on seeding, support, and payoff preparation rather than inventing new plot lines.\n\
+- If there is not enough evidence of a meaningful setup/payoff thread, leave setupPayoffSupport empty.\n\
 - Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
 - Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
 - Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
@@ -1263,6 +1277,11 @@ fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStru
             .collect(),
         ending_direction_preparation: raw
             .ending_direction_preparation
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        setup_payoff_support: raw
+            .setup_payoff_support
             .into_iter()
             .filter_map(map_story_diagnostic_entry)
             .collect(),
@@ -1898,6 +1917,14 @@ mod tests {
           "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
         }
       ],
+      "setupPayoffSupport": [
+        {
+          "title": "Chapter 2 only lightly seeds Rian's iron vulnerability payoff",
+          "detail": "The chapter notes imply Rian's iron pain should matter later, but the current spine still gives that thread limited visible groundwork.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
+        }
+      ],
       "nextPlanningTargets": [
         {
           "title": "Define the chapter-level irreversible turn",
@@ -1952,7 +1979,20 @@ mod tests {
             1
         );
         assert_eq!(
-            result.story_structure_diagnostic.ending_direction_preparation[0]
+            result
+                .story_structure_diagnostic
+                .ending_direction_preparation[0]
+                .focus
+                .as_ref()
+                .map(|reference| reference.id.as_str()),
+            Some("chapter-2")
+        );
+        assert_eq!(
+            result.story_structure_diagnostic.setup_payoff_support.len(),
+            1
+        );
+        assert_eq!(
+            result.story_structure_diagnostic.setup_payoff_support[0]
                 .focus
                 .as_ref()
                 .map(|reference| reference.id.as_str()),
@@ -1997,6 +2037,7 @@ mod tests {
         }
       ],
       "endingDirectionPreparation": [],
+      "setupPayoffSupport": [],
       "nextPlanningTargets": []
     }
   }
@@ -2053,9 +2094,15 @@ mod tests {
         assert!(prompt.contains(
             "use alignment support when the spine already gives clear concrete evidence"
         ));
-        assert!(prompt.contains("If the saved brief is sparse, generic, or not materially relevant"));
+        assert!(
+            prompt.contains("If the saved brief is sparse, generic, or not materially relevant")
+        );
         assert!(prompt.contains("result.storyStructureDiagnostic.endingDirectionPreparation"));
         assert!(prompt.contains("If the saved brief has no meaningful ending direction"));
+        assert!(prompt.contains("result.storyStructureDiagnostic.setupPayoffSupport"));
+        assert!(
+            prompt.contains("If there is not enough evidence of a meaningful setup/payoff thread")
+        );
     }
 
     #[test]

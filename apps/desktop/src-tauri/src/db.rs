@@ -1711,13 +1711,11 @@ mod tests {
             title: "Ashen Sky".to_string(),
             logline: "A disgraced courier must smuggle a living map across a collapsing empire."
                 .to_string(),
-            premise: "A failed courier becomes the only safe carrier for a living map."
-                .to_string(),
+            premise: "A failed courier becomes the only safe carrier for a living map.".to_string(),
             central_conflict:
                 "Every faction wants the map, and Ava does not trust herself to protect it."
                     .to_string(),
-            thematic_intent: "Explore when responsibility turns into chosen freedom."
-                .to_string(),
+            thematic_intent: "Explore when responsibility turns into chosen freedom.".to_string(),
             genre: "Science-fantasy adventure".to_string(),
             tone: "Tense and wonder-struck".to_string(),
             path: temp_path.to_string_lossy().into_owned(),

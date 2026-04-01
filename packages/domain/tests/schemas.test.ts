@@ -140,6 +140,25 @@ describe("domain schemas", () => {
                 ],
               },
             ],
+            setupPayoffSupport: [
+              {
+                title: "Chapter 2 only lightly seeds Rian's iron vulnerability payoff",
+                detail:
+                  "The saved chapter setup/payoff note points to Rian's iron pain mattering later, but the current spine still gives that thread limited visible groundwork.",
+                focus: {
+                  kind: "chapter",
+                  id: "chapter-2",
+                  title: "Chapter 2: Border Sparks",
+                },
+                related: [
+                  {
+                    kind: "scene",
+                    id: "scene-3",
+                    title: "Checkpoint Lanterns",
+                  },
+                ],
+              },
+            ],
             nextPlanningTargets: [],
           },
         },

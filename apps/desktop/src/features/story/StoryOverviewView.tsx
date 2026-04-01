@@ -352,6 +352,14 @@ const storyDiagnosticSections: Array<{
     tone: "accent",
   },
   {
+    key: "setupPayoffSupport",
+    title: "Setup/Payoff Support",
+    description:
+      "Places where important setups, promises, or later payoffs may need stronger groundwork.",
+    emptyMessage: "No setup/payoff support concerns surfaced in this review pass.",
+    tone: "accent",
+  },
+  {
     key: "nextPlanningTargets",
     title: "Next Planning Targets",
     description: "Highest-leverage planning passes to tackle next.",

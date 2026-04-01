@@ -246,6 +246,25 @@ function createStoryDiagnosticResponse() {
             ],
           },
         ],
+        setupPayoffSupport: [
+          {
+            title: "Chapter 2 only lightly seeds Rian's iron vulnerability payoff",
+            detail:
+              "The chapter notes imply Rian's iron pain should matter later, but the current spine still gives that thread limited visible groundwork.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-3",
+                title: "Checkpoint Lanterns",
+              },
+            ],
+          },
+        ],
         nextPlanningTargets: [
           {
             title: "Clarify what Chapter 2 permanently changes",
@@ -583,6 +602,7 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Missing Transitions")).toBeTruthy();
     expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
     expect(screen.getByText("Ending Direction Preparation")).toBeTruthy();
+    expect(screen.getByText("Setup/Payoff Support")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
     expect(screen.getByText("Support")).toBeTruthy();
     expect(screen.getByText("Weak support")).toBeTruthy();
@@ -592,6 +612,9 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Chapter 2 under-supports Ava's responsibility turn")).toBeTruthy();
     expect(
       screen.getByText("Chapter 2 is not yet preparing Ava's later stewardship choice"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("Chapter 2 only lightly seeds Rian's iron vulnerability payoff"),
     ).toBeTruthy();
     expect(
       screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" }).length,
