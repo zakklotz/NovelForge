@@ -1,4 +1,4 @@
-import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState, type RefObject } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
@@ -22,6 +22,86 @@ const MENU_EVENT_OPEN_PROJECT = "novelforge://open-project";
 const MENU_EVENT_CLOSE_PROJECT = "novelforge://close-project";
 const MENU_EVENT_OPEN_SETTINGS = "novelforge://open-settings";
 const CLOSE_APP_TARGET_LABEL = "close NovelForge";
+
+interface FocusRestoreDescriptor {
+  tagName: "button" | "input" | "textarea" | "select";
+  label: string | null;
+}
+
+function normalizeFocusRestoreLabel(value: string | null | undefined) {
+  return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
+}
+
+function describeFocusRestoreTarget(
+  element: HTMLElement | null,
+): FocusRestoreDescriptor | null {
+  if (element instanceof HTMLButtonElement) {
+    return {
+      tagName: "button",
+      label: element.getAttribute("aria-label") || element.textContent,
+    };
+  }
+
+  if (element instanceof HTMLInputElement) {
+    return {
+      tagName: "input",
+      label: element.getAttribute("aria-label") || element.placeholder,
+    };
+  }
+
+  if (element instanceof HTMLTextAreaElement) {
+    return {
+      tagName: "textarea",
+      label: element.getAttribute("aria-label") || element.placeholder,
+    };
+  }
+
+  if (element instanceof HTMLSelectElement) {
+    return {
+      tagName: "select",
+      label: element.getAttribute("aria-label"),
+    };
+  }
+
+  return null;
+}
+
+function findFocusRestoreTarget(
+  descriptor: FocusRestoreDescriptor | null,
+): HTMLElement | null {
+  if (!descriptor) {
+    return null;
+  }
+
+  const normalizedLabel = normalizeFocusRestoreLabel(descriptor.label);
+  if (!normalizedLabel) {
+    return null;
+  }
+
+  const selectorByTagName: Record<FocusRestoreDescriptor["tagName"], string> = {
+    button: "button:not([disabled])",
+    input: "input:not([disabled])",
+    textarea: "textarea:not([disabled])",
+    select: "select:not([disabled])",
+  };
+
+  return (
+    Array.from(document.querySelectorAll<HTMLElement>(selectorByTagName[descriptor.tagName])).find(
+      (candidate) =>
+        normalizeFocusRestoreLabel(
+          candidate.getAttribute("aria-label") ||
+            ("placeholder" in candidate ? candidate.getAttribute("placeholder") : null) ||
+            candidate.textContent,
+        ) === normalizedLabel,
+    ) ?? null
+  );
+}
+
+function findFallbackFocusTarget() {
+  return document.querySelector<HTMLElement>(
+    "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+  );
+}
 
 function StartupState({
   projectSeed,
@@ -87,6 +167,7 @@ function CreateProjectDialog({
   onToggleOptionalStoryAnchors,
   onCreateProject,
   onCancel,
+  dialogRef,
   isBusy,
   errorMessage,
 }: {
@@ -96,11 +177,13 @@ function CreateProjectDialog({
   onToggleOptionalStoryAnchors: () => void;
   onCreateProject: () => Promise<void>;
   onCancel: () => void;
+  dialogRef: RefObject<HTMLDivElement | null>;
   isBusy: boolean;
   errorMessage: string | null;
 }) {
   return (
     <div
+      ref={dialogRef}
       className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(32,22,14,0.4)] p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
@@ -147,6 +230,10 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const [isRestoring, setIsRestoring] = useState(true);
   const [startupError, setStartupError] = useState<string | null>(null);
   const hasAttemptedRestore = useRef(false);
+  const createProjectDialogRef = useRef<HTMLDivElement | null>(null);
+  const previousFocusedElementRef = useRef<HTMLElement | null>(null);
+  const previousFocusedDescriptorRef = useRef<FocusRestoreDescriptor | null>(null);
+  const wasCreateProjectDialogOpenRef = useRef(false);
 
   const openWorkspace = useEffectEvent(
     async (
@@ -180,6 +267,15 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     setProjectSeed(emptyProjectCreationSeedState());
     setShowOptionalStoryAnchors(false);
     setStartupError(null);
+  });
+
+  const handleDismissCreateProjectDialog = useEffectEvent(() => {
+    if (isStartingProject) {
+      return;
+    }
+
+    setIsCreateProjectDialogOpen(false);
+    resetProjectCreationState();
   });
 
   const runProtectedProjectAction = useEffectEvent(
@@ -425,6 +521,61 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     void openWorkspace(snapshotQuery.data.projectState.lastRoute);
   }, [openWorkspace, pathname, snapshotQuery.data]);
 
+  useEffect(() => {
+    if (!isCreateProjectDialogOpen) {
+      if (!wasCreateProjectDialogOpenRef.current) {
+        return;
+      }
+
+      wasCreateProjectDialogOpenRef.current = false;
+      const previousFocusedElement = previousFocusedElementRef.current;
+      const previousFocusedDescriptor = previousFocusedDescriptorRef.current;
+      previousFocusedElementRef.current = null;
+      previousFocusedDescriptorRef.current = null;
+
+      if (
+        previousFocusedElement &&
+        previousFocusedElement !== document.body &&
+        previousFocusedElement.isConnected
+      ) {
+        previousFocusedElement.focus();
+      } else {
+        findFocusRestoreTarget(previousFocusedDescriptor)?.focus();
+        if (document.activeElement === document.body) {
+          findFallbackFocusTarget()?.focus();
+        }
+      }
+
+      return;
+    }
+
+    wasCreateProjectDialogOpenRef.current = true;
+    previousFocusedElementRef.current =
+      document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    previousFocusedDescriptorRef.current = describeFocusRestoreTarget(
+      previousFocusedElementRef.current,
+    );
+
+    const primaryField = createProjectDialogRef.current?.querySelector<HTMLElement>(
+      "[data-create-project-primary-field='true']",
+    );
+    primaryField?.focus();
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || isStartingProject) {
+        return;
+      }
+
+      event.preventDefault();
+      handleDismissCreateProjectDialog();
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [handleDismissCreateProjectDialog, isCreateProjectDialogOpen, isStartingProject]);
+
   let content = children;
 
   if (!currentProjectId) {
@@ -502,10 +653,8 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
             setShowOptionalStoryAnchors((current) => !current)
           }
           onCreateProject={handleCreateProject}
-          onCancel={() => {
-            setIsCreateProjectDialogOpen(false);
-            resetProjectCreationState();
-          }}
+          onCancel={handleDismissCreateProjectDialog}
+          dialogRef={createProjectDialogRef}
           isBusy={isStartingProject}
           errorMessage={startupError}
         />

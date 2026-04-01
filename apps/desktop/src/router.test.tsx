@@ -332,6 +332,50 @@ describe("AppRouter loaded project flow", () => {
     queryClient.clear();
   });
 
+  it("focuses the create-project overlay title field and closes it with Escape", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    const workspaceSearchInput = await screen.findByPlaceholderText(
+      "Quick filter chapters, scenes, and characters",
+    );
+    workspaceSearchInput.focus();
+    expect(document.activeElement).toBe(workspaceSearchInput);
+
+    await waitFor(() => {
+      expect(menuListeners.has("novelforge://new-project")).toBe(true);
+    });
+
+    await act(async () => {
+      await menuListeners.get("novelforge://new-project")?.();
+    });
+
+    const titleInput = await screen.findByPlaceholderText("Untitled Novel");
+    expect(document.activeElement).toBe(titleInput);
+
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    await waitFor(() => {
+      expect(screen.queryByRole("dialog", { name: "Create a new project" })).toBeNull();
+    });
+
+    expect(document.activeElement).toBe(workspaceSearchInput);
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("restores the last valid project on launch", async () => {
     const restoredSnapshot = {
       ...sampleProjectSnapshot,

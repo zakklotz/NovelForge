@@ -31,7 +31,7 @@ import { useAiRuntime } from "@/hooks/useAiRuntime";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { splitLines } from "@/lib/utils";
+import { cn, splitLines } from "@/lib/utils";
 import { useUiStore } from "@/store/uiStore";
 import { createEmptySceneInput } from "@/features/scenes/sceneFactories";
 
@@ -257,6 +257,10 @@ export function ChapterDetailView() {
   const { moveScene, saveChapter, saveScene } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
+  const diagnosticJumpHighlight = useUiStore((state) => state.diagnosticJumpHighlight);
+  const setDiagnosticJumpHighlight = useUiStore(
+    (state) => state.setDiagnosticJumpHighlight,
+  );
   const snapshot = snapshotQuery.data;
   const appSettings = appSettingsQuery.data;
 
@@ -283,6 +287,8 @@ export function ChapterDetailView() {
   const [sceneProposalMessage, setSceneProposalMessage] = useState<string | null>(null);
   const [movingSceneId, setMovingSceneId] = useState<string | null>(null);
   const [sceneMoveError, setSceneMoveError] = useState<string | null>(null);
+  const chapterJumpHighlightRef = useRef<HTMLElement | null>(null);
+  const [isJumpHighlighted, setIsJumpHighlighted] = useState(false);
 
   useEffect(() => {
     planningRef.current = planning;
@@ -353,6 +359,33 @@ export function ChapterDetailView() {
       }
     };
   }, [chapter?.id]);
+
+  useEffect(() => {
+    if (!chapter || diagnosticJumpHighlight?.kind !== "chapter") {
+      return;
+    }
+
+    if (diagnosticJumpHighlight.id !== chapter.id) {
+      return;
+    }
+
+    setIsJumpHighlighted(true);
+    setDiagnosticJumpHighlight(null);
+
+    const highlightNode = chapterJumpHighlightRef.current;
+    if (highlightNode) {
+      if (typeof highlightNode.scrollIntoView === "function") {
+        highlightNode.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+      highlightNode.focus({ preventScroll: true });
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsJumpHighlighted(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [chapter, diagnosticJumpHighlight, setDiagnosticJumpHighlight]);
 
   if (!snapshot) {
     return null;
@@ -634,7 +667,17 @@ export function ChapterDetailView() {
 
   return (
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(340px,0.9fr)_minmax(0,1.1fr)]">
-      <Panel className="min-h-0 overflow-y-auto">
+      <Panel
+        ref={chapterJumpHighlightRef}
+        tabIndex={-1}
+        data-jump-highlighted={isJumpHighlighted ? "true" : undefined}
+        className={cn(
+          "min-h-0 overflow-y-auto outline-none transition",
+          isJumpHighlighted
+            ? "ring-2 ring-[color:rgba(184,88,63,0.28)] shadow-[0_0_0_4px_rgba(184,88,63,0.10)]"
+            : null,
+        )}
+      >
         <SectionHeading
           title={currentChapter.title}
           description="Plan the chapter above the prose level: define why it exists, what it changes, and how its scenes ladder upward."

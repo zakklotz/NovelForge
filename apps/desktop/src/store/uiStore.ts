@@ -17,6 +17,11 @@ export interface PendingWorkspaceAction {
   runAction: () => Promise<void>;
 }
 
+export interface DiagnosticJumpHighlight {
+  kind: "chapter" | "scene";
+  id: string;
+}
+
 interface UiState {
   currentProjectId: string | null;
   selectedChapterId: string | null;
@@ -26,6 +31,7 @@ interface UiState {
   isAnalyzing: boolean;
   workspaceSession: WorkspaceSession | null;
   pendingWorkspaceAction: PendingWorkspaceAction | null;
+  diagnosticJumpHighlight: DiagnosticJumpHighlight | null;
   setCurrentProjectId: (projectId: string | null) => void;
   setSelectedChapterId: (chapterId: string | null) => void;
   setSelectedCharacterId: (characterId: string | null) => void;
@@ -35,6 +41,7 @@ interface UiState {
   setIsAnalyzing: (isAnalyzing: boolean) => void;
   setWorkspaceSession: (session: WorkspaceSession | null) => void;
   setPendingWorkspaceAction: (action: PendingWorkspaceAction | null) => void;
+  setDiagnosticJumpHighlight: (highlight: DiagnosticJumpHighlight | null) => void;
   resetUi: () => void;
 }
 
@@ -47,6 +54,7 @@ const initialState = {
   isAnalyzing: false,
   workspaceSession: null,
   pendingWorkspaceAction: null,
+  diagnosticJumpHighlight: null,
 };
 
 export const useUiStore = create<UiState>((set) => ({
@@ -63,5 +71,7 @@ export const useUiStore = create<UiState>((set) => ({
   setWorkspaceSession: (workspaceSession) => set({ workspaceSession }),
   setPendingWorkspaceAction: (pendingWorkspaceAction) =>
     set({ pendingWorkspaceAction }),
+  setDiagnosticJumpHighlight: (diagnosticJumpHighlight) =>
+    set({ diagnosticJumpHighlight }),
   resetUi: () => set(initialState),
 }));

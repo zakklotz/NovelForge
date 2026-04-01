@@ -74,21 +74,23 @@ export function Select({
   );
 }
 
-export function Panel({
-  className,
-  children,
-}: React.PropsWithChildren<{ className?: string }>) {
+export const Panel = React.forwardRef<
+  HTMLElement,
+  React.PropsWithChildren<React.HTMLAttributes<HTMLElement>>
+>(function Panel({ className, children, ...props }, ref) {
   return (
     <section
+      ref={ref}
       className={cn(
         "rounded-3xl border border-white/60 bg-[var(--panel)] p-5 shadow-[0_20px_50px_rgba(38,27,16,0.08)] backdrop-blur",
         className,
       )}
+      {...props}
     >
       {children}
     </section>
   );
-}
+});
 
 export function Field({
   label,

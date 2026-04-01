@@ -492,6 +492,9 @@ export function StoryOverviewView() {
   const searchText = useUiStore((state) => state.searchText);
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
+  const setDiagnosticJumpHighlight = useUiStore(
+    (state) => state.setDiagnosticJumpHighlight,
+  );
   const snapshot = snapshotQuery.data;
   const appSettings = appSettingsQuery.data;
   const [storyBrief, setStoryBrief] = useState<StoryBriefState>(() =>
@@ -796,6 +799,10 @@ export function StoryOverviewView() {
   }
 
   async function handleOpenDiagnosticJumpTarget(target: StoryReferenceJumpTarget) {
+    setDiagnosticJumpHighlight({
+      kind: target.kind,
+      id: target.id,
+    });
     setSelectedChapterId(target.chapterId);
 
     if (target.kind === "chapter") {

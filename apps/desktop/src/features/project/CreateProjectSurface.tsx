@@ -57,6 +57,7 @@ export function CreateProjectSurface({
 
       <Field label="New Project Title" hint="Required">
         <Input
+          data-create-project-primary-field="true"
           placeholder="Untitled Novel"
           value={projectSeed.title}
           onChange={(event) => onProjectSeedChange("title", event.target.value)}

@@ -315,6 +315,10 @@ export function SceneWorkspaceView() {
   const { runStructuredAiAction } = useAiRuntime();
   const { saveScene, saveManuscript } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
+  const diagnosticJumpHighlight = useUiStore((state) => state.diagnosticJumpHighlight);
+  const setDiagnosticJumpHighlight = useUiStore(
+    (state) => state.setDiagnosticJumpHighlight,
+  );
   const snapshot = snapshotQuery.data;
   const appSettings = appSettingsQuery.data;
 
@@ -341,6 +345,8 @@ export function SceneWorkspaceView() {
   const queuedDraftRef = useRef<string | null>(null);
   const activeDraftSavePromiseRef = useRef<Promise<void> | null>(null);
   const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
+  const sceneJumpHighlightRef = useRef<HTMLElement | null>(null);
+  const [isJumpHighlighted, setIsJumpHighlighted] = useState(false);
 
   useEffect(() => {
     currentSceneRef.current = scene ?? null;
@@ -607,6 +613,33 @@ export function SceneWorkspaceView() {
     };
   }, [scene?.id]);
 
+  useEffect(() => {
+    if (!scene || diagnosticJumpHighlight?.kind !== "scene") {
+      return;
+    }
+
+    if (diagnosticJumpHighlight.id !== scene.id) {
+      return;
+    }
+
+    setIsJumpHighlighted(true);
+    setDiagnosticJumpHighlight(null);
+
+    const highlightNode = sceneJumpHighlightRef.current;
+    if (highlightNode) {
+      if (typeof highlightNode.scrollIntoView === "function") {
+        highlightNode.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+      highlightNode.focus({ preventScroll: true });
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setIsJumpHighlighted(false);
+    }, 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [diagnosticJumpHighlight, scene, setDiagnosticJumpHighlight]);
+
   if (!snapshot || !scene) {
     return (
       <Panel>
@@ -819,7 +852,17 @@ export function SceneWorkspaceView() {
 
   return (
     <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
-      <Panel className="min-h-0 overflow-y-auto">
+      <Panel
+        ref={sceneJumpHighlightRef}
+        tabIndex={-1}
+        data-jump-highlighted={isJumpHighlighted ? "true" : undefined}
+        className={cn(
+          "min-h-0 overflow-y-auto outline-none transition",
+          isJumpHighlighted
+            ? "ring-2 ring-[color:rgba(184,88,63,0.28)] shadow-[0_0_0_4px_rgba(184,88,63,0.10)]"
+            : null,
+        )}
+      >
         <SectionHeading
           title="Scene Frame"
           description="Keep the scene's title, cast pressure, and continuity anchored while you plan and draft."

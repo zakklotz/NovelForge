@@ -781,7 +781,16 @@ describe("StoryOverviewView", () => {
     });
 
     expect(screen.getByText("Scene Plan")).toBeTruthy();
+    const chapterWorkspacePanel = document.querySelector(
+      "[data-jump-highlighted='true']",
+    ) as HTMLElement | null;
+
     expect(useUiStore.getState().selectedChapterId).toBe("chapter-2");
+    expect(
+      within(chapterWorkspacePanel as HTMLElement).getByDisplayValue("Chapter 2: Border Sparks"),
+    ).toBeTruthy();
+    expect(chapterWorkspacePanel?.dataset.jumpHighlighted).toBe("true");
+    expect(document.activeElement).toBe(chapterWorkspacePanel);
 
     unmount();
     queryClient.clear();
@@ -817,7 +826,16 @@ describe("StoryOverviewView", () => {
     });
 
     expect(screen.getByText("Scene Frame")).toBeTruthy();
+    const sceneWorkspacePanel = document.querySelector(
+      "[data-jump-highlighted='true']",
+    ) as HTMLElement | null;
+
     expect(useUiStore.getState().selectedChapterId).toBe("chapter-2");
+    expect(
+      within(sceneWorkspacePanel as HTMLElement).getByDisplayValue("Checkpoint Lanterns"),
+    ).toBeTruthy();
+    expect(sceneWorkspacePanel?.dataset.jumpHighlighted).toBe("true");
+    expect(document.activeElement).toBe(sceneWorkspacePanel);
 
     unmount();
     queryClient.clear();
