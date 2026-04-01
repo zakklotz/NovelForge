@@ -1,0 +1,14 @@
+{
+  "name": "novelforge",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.18.2",
+  "scripts": {
+    "dev": "pnpm --filter @novelforge/desktop tauri dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "desktop:dev": "pnpm --filter @novelforge/desktop dev",
+    "desktop:build": "pnpm --filter @novelforge/desktop build"
+  }
+}

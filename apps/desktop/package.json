@@ -1,0 +1,50 @@
+{
+  "name": "@novelforge/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.app.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.app.json",
+    "test": "vitest run --passWithNoTests",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/modifiers": "^9.0.0",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
+    "@novelforge/analysis": "workspace:*",
+    "@novelforge/domain": "workspace:*",
+    "@novelforge/test-fixtures": "workspace:*",
+    "@tanstack/react-query": "^5.71.10",
+    "@tanstack/react-router": "^1.114.26",
+    "@tauri-apps/api": "^2.3.0",
+    "@tauri-apps/plugin-dialog": "^2.2.1",
+    "@tiptap/react": "^2.11.5",
+    "@tiptap/starter-kit": "^2.11.5",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.483.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "zod": "^3.24.2",
+    "zustand": "^5.0.3"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.0.13",
+    "@tauri-apps/cli": "^2.3.1",
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.3.0",
+    "@types/node": "^22.19.15",
+    "@types/react": "^19.0.10",
+    "@types/react-dom": "^19.0.4",
+    "@vitejs/plugin-react-swc": "^3.8.0",
+    "jsdom": "^26.0.0",
+    "tailwindcss": "^4.0.13",
+    "typescript": "^5.8.2",
+    "vite": "^6.2.2",
+    "vitest": "^3.0.9"
+  }
+}

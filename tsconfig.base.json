@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "allowJs": false,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "baseUrl": ".",
+    "paths": {
+      "@novelforge/domain": ["packages/domain/src/index.ts"],
+      "@novelforge/domain/*": ["packages/domain/src/*"],
+      "@novelforge/analysis": ["packages/analysis/src/index.ts"],
+      "@novelforge/analysis/*": ["packages/analysis/src/*"],
+      "@novelforge/test-fixtures": ["packages/test-fixtures/src/index.ts"],
+      "@novelforge/test-fixtures/*": ["packages/test-fixtures/src/*"]
+    }
+  }
+}

@@ -1,0 +1,55 @@
+@import "tailwindcss";
+
+:root {
+  --background: linear-gradient(180deg, #f7efe3 0%, #efe3cf 48%, #ecd9c5 100%);
+  --panel: rgba(255, 252, 247, 0.78);
+  --ink: #2a2118;
+  --ink-muted: #6e5a48;
+  --ink-faint: #9a8773;
+  --accent: #b8583f;
+  --accent-strong: #8f3f28;
+  --sand: #e8bf72;
+  --warning: #9b6b13;
+  --danger: #ae432d;
+  color: var(--ink);
+  font-family: "Fraunces", "Spectral", Georgia, serif;
+  background: var(--background);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+  margin: 0;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(255, 255, 255, 0.52), transparent 30%),
+    radial-gradient(circle at bottom left, rgba(184, 88, 63, 0.12), transparent 35%),
+    var(--background);
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+.prose-editor .ProseMirror {
+  min-height: 55vh;
+  outline: none;
+  line-height: 1.8;
+  font-size: 1rem;
+  color: var(--ink);
+}
+
+.prose-editor .ProseMirror p {
+  margin: 0 0 1rem;
+}
