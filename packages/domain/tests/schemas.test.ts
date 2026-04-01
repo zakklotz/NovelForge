@@ -107,6 +107,19 @@ describe("domain schemas", () => {
             ],
             redundantFunctions: [],
             missingTransitions: [],
+            briefAlignmentNotes: [
+              {
+                title: "Chapter 2 under-supports the story's intended character turn",
+                detail:
+                  "The spine carries external pressure, but the saved brief's responsibility arc is still lightly supported on the page.",
+                focus: {
+                  kind: "chapter",
+                  id: "chapter-2",
+                  title: "Chapter 2: Border Sparks",
+                },
+                related: [],
+              },
+            ],
             nextPlanningTargets: [],
           },
         },

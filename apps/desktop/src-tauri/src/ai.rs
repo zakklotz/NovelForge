@@ -218,6 +218,8 @@ struct RawStoryStructureDiagnostic {
     #[serde(default)]
     missing_transitions: Vec<RawStoryDiagnosticEntry>,
     #[serde(default)]
+    brief_alignment_notes: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
     next_planning_targets: Vec<RawStoryDiagnosticEntry>,
 }
 
@@ -905,6 +907,12 @@ Return JSON only with this exact top-level shape:\n\
         \"focus\": null,\n\
         \"related\": [{{ \"kind\": \"scene\", \"id\": \"\", \"title\": \"\" }}]\n\
       }}],\n\
+      \"briefAlignmentNotes\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
       \"nextPlanningTargets\": [{{\n\
         \"title\": \"\",\n\
         \"detail\": \"\",\n\
@@ -923,6 +931,7 @@ Rules:\n\
 - Do not contradict existing chapter, scene, or character facts.\n\
 - For storyStructureDiagnostic entries, use chapter or scene refs whenever the issue points to a specific part of the spine.\n\
 - Keep storyStructureDiagnostic entries short, concrete, and review-oriented.\n\
+- In briefAlignmentNotes, mention the saved story-brief element only when it adds useful planning signal.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -957,6 +966,9 @@ Task:\n\
 - Use result.storyStructureDiagnostic.underdefinedChapters for chapters that look thin, underdefined, or weakly supported by their current scenes.\n\
 - Use result.storyStructureDiagnostic.redundantFunctions for chapters or scenes that appear to serve the same function without enough escalation or differentiation.\n\
 - Use result.storyStructureDiagnostic.missingTransitions for missing handoffs, consequence beats, bridge scenes, or chapter-to-chapter transitions.\n\
+- Use result.storyStructureDiagnostic.briefAlignmentNotes for the clearest places where the current spine either supports the saved story brief or seems to underserve it.\n\
+- In briefAlignmentNotes, explicitly connect the note to the relevant saved brief anchor when useful, such as premise, central conflict, thematic intent, ending direction, genre, or tone.\n\
+- Keep briefAlignmentNotes selective and planning-oriented: 0 to 3 entries, only when the saved brief has enough signal.\n\
 - Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
 - Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
 - Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
@@ -1187,6 +1199,11 @@ fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStru
             .collect(),
         missing_transitions: raw
             .missing_transitions
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        brief_alignment_notes: raw
+            .brief_alignment_notes
             .into_iter()
             .filter_map(map_story_diagnostic_entry)
             .collect(),
@@ -1805,6 +1822,14 @@ mod tests {
           "related": [{ "kind": "scene", "id": "scene-2", "title": "The Crate Speaks" }]
         }
       ],
+      "briefAlignmentNotes": [
+        {
+          "title": "Chapter 2 under-supports Ava's responsibility turn",
+          "detail": "The checkpoint pressure fits the premise, but the spine still gives limited evidence of Ava choosing stewardship over escape.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
+        }
+      ],
       "nextPlanningTargets": [
         {
           "title": "Define the chapter-level irreversible turn",
@@ -1838,6 +1863,13 @@ mod tests {
         );
         assert_eq!(
             result.story_structure_diagnostic.missing_transitions.len(),
+            1
+        );
+        assert_eq!(
+            result
+                .story_structure_diagnostic
+                .brief_alignment_notes
+                .len(),
             1
         );
         assert_eq!(

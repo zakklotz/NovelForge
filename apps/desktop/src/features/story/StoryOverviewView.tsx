@@ -335,6 +335,14 @@ const storyDiagnosticSections: Array<{
     tone: "accent",
   },
   {
+    key: "briefAlignmentNotes",
+    title: "Story Brief Alignment",
+    description:
+      "Places where the current spine visibly supports or under-supports the saved story intent.",
+    emptyMessage: "No meaningful story-brief alignment notes surfaced in this review pass.",
+    tone: "accent",
+  },
+  {
     key: "nextPlanningTargets",
     title: "Next Planning Targets",
     description: "Highest-leverage planning passes to tackle next.",
@@ -1072,7 +1080,7 @@ export function StoryOverviewView() {
 
           <div className="mt-4 flex flex-wrap gap-2">
             <Badge tone="accent">
-              {storyDiagnosticEntryCount} structural note
+              {storyDiagnosticEntryCount} review note
               {storyDiagnosticEntryCount === 1 ? "" : "s"}
             </Badge>
           </div>

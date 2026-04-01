@@ -177,6 +177,25 @@ function createStoryDiagnosticResponse() {
             ],
           },
         ],
+        briefAlignmentNotes: [
+          {
+            title: "Chapter 2 under-supports Ava's responsibility turn",
+            detail:
+              "The border material carries external pressure, but the current spine still gives limited support to the brief's stewardship-over-escape arc.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "scene",
+                id: "scene-3",
+                title: "Checkpoint Lanterns",
+              },
+            ],
+          },
+        ],
         nextPlanningTargets: [
           {
             title: "Clarify what Chapter 2 permanently changes",
@@ -512,14 +531,16 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Underdefined Chapters")).toBeTruthy();
     expect(screen.getByText("Redundant Functions")).toBeTruthy();
     expect(screen.getByText("Missing Transitions")).toBeTruthy();
+    expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
     expect(screen.getByText("Chapter 2 needs a clearer chapter-level turn")).toBeTruthy();
+    expect(screen.getByText("Chapter 2 under-supports Ava's responsibility turn")).toBeTruthy();
     expect(
       screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" }).length,
     ).toBeGreaterThan(0);
     expect(
-      screen.getByRole("button", { name: "Chapter 2 · Scene 1: Checkpoint Lanterns" }),
-    ).toBeTruthy();
+      screen.getAllByRole("button", { name: "Chapter 2 · Scene 1: Checkpoint Lanterns" }).length,
+    ).toBeGreaterThan(0);
 
     unmount();
     queryClient.clear();
@@ -577,9 +598,9 @@ describe("StoryOverviewView", () => {
     });
 
     fireEvent.click(
-      screen.getByRole("button", {
+      screen.getAllByRole("button", {
         name: "Chapter 2 · Scene 1: Checkpoint Lanterns",
-      }),
+      })[0],
     );
 
     await waitFor(() => {
