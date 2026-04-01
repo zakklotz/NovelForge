@@ -3,16 +3,16 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use tauri::{AppHandle, State};
 
-use crate::{ai, app_settings, db, startup_state};
 use crate::models::{
-    ApplyScratchpadResultInput, ApplyScratchpadResultOutput, ApplySuggestionInput, AppSettings,
+    AppSettings, ApplyScratchpadResultInput, ApplyScratchpadResultOutput, ApplySuggestionInput,
     CreateProjectInput, DismissSuggestionInput, MoveSceneInput, OpenProjectInput, ProjectSnapshot,
     ProjectState, ProviderConnectionResult, RecommendedModel, RunScratchpadChatInput,
     RunStructuredAIActionInput, SaveAppSettingsInput, SaveChapterInput, SaveCharacterInput,
-    SaveManuscriptInput, SaveSceneInput, ScratchpadChatResponse, StructuredAIResponse,
-    Suggestion, SyncSuggestionsInput, TestProviderConnectionInput,
+    SaveManuscriptInput, SaveProjectMetadataInput, SaveSceneInput, ScratchpadChatResponse,
+    StructuredAIResponse, Suggestion, SyncSuggestionsInput, TestProviderConnectionInput,
 };
 use crate::state::AppState;
+use crate::{ai, app_settings, db, startup_state};
 
 fn resolve_current_path(state: &State<'_, AppState>) -> Result<PathBuf> {
     state
@@ -70,7 +70,8 @@ pub fn restore_last_project(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Option<ProjectSnapshot>, String> {
-    let Some(path) = startup_state::load_last_project(&app).map_err(|error| error.to_string())? else {
+    let Some(path) = startup_state::load_last_project(&app).map_err(|error| error.to_string())?
+    else {
         clear_current_path(&state).map_err(|error| error.to_string())?;
         return Ok(None);
     };
@@ -107,6 +108,15 @@ pub fn close_project(state: State<'_, AppState>) -> Result<(), String> {
 pub fn get_project_snapshot(state: State<'_, AppState>) -> Result<ProjectSnapshot, String> {
     let path = resolve_current_path(&state).map_err(|error| error.to_string())?;
     db::get_snapshot(&path).map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+pub fn set_project_metadata(
+    state: State<'_, AppState>,
+    input: SaveProjectMetadataInput,
+) -> Result<crate::models::Project, String> {
+    let path = resolve_current_path(&state).map_err(|error| error.to_string())?;
+    db::save_project_metadata(&path, input).map_err(|error| error.to_string())
 }
 
 #[tauri::command]
@@ -221,7 +231,9 @@ pub fn save_app_settings(
 }
 
 #[tauri::command]
-pub fn list_recommended_models(provider_id: Option<String>) -> Result<Vec<RecommendedModel>, String> {
+pub fn list_recommended_models(
+    provider_id: Option<String>,
+) -> Result<Vec<RecommendedModel>, String> {
     Ok(ai::list_recommended_models(provider_id))
 }
 

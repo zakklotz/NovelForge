@@ -1,7 +1,7 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
-use std::collections::HashMap;
 
 use anyhow::{anyhow, Context, Result};
 use chrono::Utc;
@@ -13,16 +13,20 @@ use uuid::Uuid;
 
 use crate::models::{
     ApplyScratchpadResultInput, ApplyScratchpadResultOutput, ApplySuggestionInput, AutosaveState,
-    Chapter, Character, CreateProjectInput,
-    DismissSuggestionInput, DomainObjectRef, MoveSceneInput, OpenProjectInput, PanelLayout,
-    Project, ProjectSettings, ProjectSnapshot, ProjectState, Relationship, SaveChapterInput,
-    SaveCharacterInput, SaveManuscriptInput, SaveSceneInput, Scene, SceneProposal, Suggestion,
+    Chapter, Character, CreateProjectInput, DismissSuggestionInput, DomainObjectRef,
+    MoveSceneInput, OpenProjectInput, PanelLayout, Project, ProjectSettings, ProjectSnapshot,
+    ProjectState, Relationship, SaveChapterInput, SaveCharacterInput, SaveManuscriptInput,
+    SaveProjectMetadataInput, SaveSceneInput, Scene, SceneProposal, Suggestion,
     SuggestionEvidenceRef, SyncSuggestionsInput, ViewFilters,
 };
 
 const MIGRATIONS: &[(i64, &str)] = &[
     (1, include_str!("../migrations/0001_initial.sql")),
     (2, include_str!("../migrations/0002_scene_beat_outline.sql")),
+    (
+        3,
+        include_str!("../migrations/0003_project_story_brief.sql"),
+    ),
 ];
 
 fn now_iso() -> String {
@@ -34,12 +38,17 @@ fn to_json<T: Serialize>(value: &T) -> Result<String> {
 }
 
 fn from_row_json<T: DeserializeOwned>(value: String, column: usize) -> rusqlite::Result<T> {
-    serde_json::from_str(&value)
-        .map_err(|error| rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(error)))
+    serde_json::from_str(&value).map_err(|error| {
+        rusqlite::Error::FromSqlConversionFailure(column, Type::Text, Box::new(error))
+    })
 }
 
 fn boxed_row_error(error: anyhow::Error) -> rusqlite::Error {
-    rusqlite::Error::FromSqlConversionFailure(0, Type::Text, Box::new(io::Error::other(error.to_string())))
+    rusqlite::Error::FromSqlConversionFailure(
+        0,
+        Type::Text,
+        Box::new(io::Error::other(error.to_string())),
+    )
 }
 
 fn optional_string(value: Option<String>) -> Option<String> {
@@ -47,9 +56,8 @@ fn optional_string(value: Option<String>) -> Option<String> {
 }
 
 fn open_connection(path: &Path) -> Result<Connection> {
-    let connection = Connection::open(path).with_context(|| {
-        format!("Failed to open project database at {}", path.display())
-    })?;
+    let connection = Connection::open(path)
+        .with_context(|| format!("Failed to open project database at {}", path.display()))?;
     connection.execute_batch("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;")?;
     Ok(connection)
 }
@@ -243,19 +251,26 @@ fn load_relationships(connection: &Connection, character_id: &str) -> Result<Vec
 fn load_project(connection: &Connection) -> Result<Project> {
     connection
         .query_row(
-            "SELECT id, title, logline, schema_version, settings_json, created_at, updated_at, last_opened_at FROM project LIMIT 1",
+            "SELECT id, title, logline, premise, central_conflict, thematic_intent, ending_direction, genre, tone, audience_notes, schema_version, settings_json, created_at, updated_at, last_opened_at FROM project LIMIT 1",
             [],
             |row| {
-                let settings_json: String = row.get(4)?;
+                let settings_json: String = row.get(11)?;
                 Ok(Project {
                     id: row.get(0)?,
                     title: row.get(1)?,
                     logline: row.get(2)?,
-                    schema_version: row.get(3)?,
-                    settings: from_row_json(settings_json, 4)?,
-                    created_at: row.get(5)?,
-                    updated_at: row.get(6)?,
-                    last_opened_at: row.get(7)?,
+                    premise: row.get(3)?,
+                    central_conflict: row.get(4)?,
+                    thematic_intent: row.get(5)?,
+                    ending_direction: row.get(6)?,
+                    genre: row.get(7)?,
+                    tone: row.get(8)?,
+                    audience_notes: row.get(9)?,
+                    schema_version: row.get(10)?,
+                    settings: from_row_json(settings_json, 11)?,
+                    created_at: row.get(12)?,
+                    updated_at: row.get(13)?,
+                    last_opened_at: row.get(14)?,
                 })
             },
         )
@@ -482,11 +497,34 @@ pub fn create_project(input: CreateProjectInput) -> Result<(PathBuf, ProjectSnap
     };
 
     transaction.execute(
-        "INSERT INTO project (id, title, logline, schema_version, settings_json, created_at, updated_at, last_opened_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        "INSERT INTO project (
+            id,
+            title,
+            logline,
+            premise,
+            central_conflict,
+            thematic_intent,
+            ending_direction,
+            genre,
+            tone,
+            audience_notes,
+            schema_version,
+            settings_json,
+            created_at,
+            updated_at,
+            last_opened_at
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
         params![
             project_id,
             input.title,
             input.logline,
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
+            "",
             latest_schema_version(),
             to_json(&settings)?,
             timestamp,
@@ -532,6 +570,51 @@ pub fn get_snapshot(path: &Path) -> Result<ProjectSnapshot> {
     load_snapshot(&connection)
 }
 
+pub fn save_project_metadata(path: &Path, input: SaveProjectMetadataInput) -> Result<Project> {
+    if input.title.trim().is_empty() {
+        return Err(anyhow!("Project title cannot be empty."));
+    }
+
+    let connection = open_connection(path)?;
+    let updated_at = now_iso();
+    let rows_updated = connection.execute(
+        r#"
+        UPDATE project
+        SET
+          title = ?1,
+          logline = ?2,
+          premise = ?3,
+          central_conflict = ?4,
+          thematic_intent = ?5,
+          ending_direction = ?6,
+          genre = ?7,
+          tone = ?8,
+          audience_notes = ?9,
+          updated_at = ?10
+        WHERE id = ?11
+        "#,
+        params![
+            input.title.trim(),
+            input.logline,
+            input.premise,
+            input.central_conflict,
+            input.thematic_intent,
+            input.ending_direction,
+            input.genre,
+            input.tone,
+            input.audience_notes,
+            updated_at,
+            input.id,
+        ],
+    )?;
+
+    if rows_updated == 0 {
+        return Err(anyhow!("Project metadata could not be saved."));
+    }
+
+    load_project(&connection)
+}
+
 fn normalize_lookup_key(value: &str) -> String {
     value.trim().to_lowercase()
 }
@@ -555,21 +638,14 @@ fn next_scene_order_index(transaction: &Transaction<'_>, chapter_id: Option<&str
     scene_count_in_bucket(transaction, chapter_id, None)
 }
 
-fn remember_lookup_entry(
-    lookup: &mut HashMap<String, String>,
-    id: &str,
-    primary_label: &str,
-) {
+fn remember_lookup_entry(lookup: &mut HashMap<String, String>, id: &str, primary_label: &str) {
     lookup.insert(normalize_lookup_key(id), id.to_string());
     if !primary_label.trim().is_empty() {
         lookup.insert(normalize_lookup_key(primary_label), id.to_string());
     }
 }
 
-fn resolve_lookup_reference(
-    lookup: &HashMap<String, String>,
-    raw_value: &str,
-) -> Option<String> {
+fn resolve_lookup_reference(lookup: &HashMap<String, String>, raw_value: &str) -> Option<String> {
     let key = normalize_lookup_key(raw_value);
     lookup.get(&key).cloned()
 }
@@ -644,11 +720,8 @@ fn move_scene_within_transaction(
     requested_target_index: i64,
 ) -> Result<i64> {
     let (current_chapter_id, current_order_index) = load_scene_position(transaction, scene_id)?;
-    let max_target_index = scene_count_in_bucket(
-        transaction,
-        target_chapter_id.as_deref(),
-        Some(scene_id),
-    )?;
+    let max_target_index =
+        scene_count_in_bucket(transaction, target_chapter_id.as_deref(), Some(scene_id))?;
     let mut target_index = requested_target_index.clamp(0, max_target_index);
 
     if current_chapter_id == target_chapter_id && target_index > current_order_index {
@@ -681,7 +754,10 @@ fn move_scene_within_transaction(
     Ok(target_index)
 }
 
-fn resolve_character_ids(values: &[String], character_lookup: &HashMap<String, String>) -> Vec<String> {
+fn resolve_character_ids(
+    values: &[String],
+    character_lookup: &HashMap<String, String>,
+) -> Vec<String> {
     values
         .iter()
         .filter_map(|value| {
@@ -778,7 +854,12 @@ pub fn apply_scratchpad_result(
         let existing_character = proposal
             .target_character_id
             .as_ref()
-            .and_then(|character_id| snapshot.characters.iter().find(|character| character.id == *character_id));
+            .and_then(|character_id| {
+                snapshot
+                    .characters
+                    .iter()
+                    .find(|character| character.id == *character_id)
+            });
         let character_id = existing_character
             .map(|character| character.id.clone())
             .unwrap_or_else(|| format!("character-{}", Uuid::new_v4().simple()));
@@ -892,10 +973,12 @@ pub fn apply_scratchpad_result(
     }
 
     for proposal in &input.result.chapters {
-        let existing_chapter = proposal
-            .target_chapter_id
-            .as_ref()
-            .and_then(|chapter_id| snapshot.chapters.iter().find(|chapter| chapter.id == *chapter_id));
+        let existing_chapter = proposal.target_chapter_id.as_ref().and_then(|chapter_id| {
+            snapshot
+                .chapters
+                .iter()
+                .find(|chapter| chapter.id == *chapter_id)
+        });
         let chapter_id = existing_chapter
             .map(|chapter| chapter.id.clone())
             .unwrap_or_else(|| format!("chapter-{}", Uuid::new_v4().simple()));
@@ -917,7 +1000,10 @@ pub fn apply_scratchpad_result(
             purpose: proposal.purpose.clone(),
             major_events: proposal.major_events.clone(),
             emotional_movement: proposal.emotional_movement.clone(),
-            character_focus_ids: resolve_character_ids(&proposal.character_focus_ids, &character_lookup),
+            character_focus_ids: resolve_character_ids(
+                &proposal.character_focus_ids,
+                &character_lookup,
+            ),
             setup_payoff_notes: proposal.setup_payoff_notes.clone(),
             order_index,
         };
@@ -995,7 +1081,9 @@ pub fn apply_scratchpad_result(
         );
         let mut order_index = existing_scene
             .map(|scene| scene.order_index)
-            .unwrap_or_else(|| next_scene_order_index(&transaction, target_chapter_id.as_deref()).unwrap_or(0));
+            .unwrap_or_else(|| {
+                next_scene_order_index(&transaction, target_chapter_id.as_deref()).unwrap_or(0)
+            });
         let chapter_changed = existing_scene
             .map(|scene| scene.chapter_id != target_chapter_id)
             .unwrap_or(false);
@@ -1085,7 +1173,12 @@ pub fn apply_scratchpad_result(
         upsert_scene_relations(&transaction, &save_input)?;
 
         if chapter_changed {
-            move_scene_within_transaction(&transaction, &scene_id, target_chapter_id.clone(), i64::MAX)?;
+            move_scene_within_transaction(
+                &transaction,
+                &scene_id,
+                target_chapter_id.clone(),
+                i64::MAX,
+            )?;
         }
 
         remember_lookup_entry(&mut scene_lookup, &scene_id, &proposal.title);
@@ -1308,7 +1401,12 @@ pub fn save_manuscript(path: &Path, input: SaveManuscriptInput) -> Result<Scene>
     let connection = open_connection(path)?;
     connection.execute(
         "UPDATE scenes SET manuscript_text = ?1, updated_at = ?2 WHERE id = ?3 AND project_id = ?4",
-        params![input.manuscript_text, now_iso(), input.scene_id, input.project_id],
+        params![
+            input.manuscript_text,
+            now_iso(),
+            input.scene_id,
+            input.project_id
+        ],
     )?;
 
     let scenes = load_scenes(&connection)?;
@@ -1542,7 +1640,10 @@ mod tests {
         let mut connection = Connection::open_in_memory()?;
         migrate(&mut connection)?;
 
-        assert_eq!(current_schema_version(&connection)?, latest_schema_version());
+        assert_eq!(
+            current_schema_version(&connection)?,
+            latest_schema_version()
+        );
 
         for table_name in [
             "project",
@@ -1564,10 +1665,8 @@ mod tests {
 
     #[test]
     fn create_project_bootstraps_default_project_state() -> Result<()> {
-        let temp_path = std::env::temp_dir().join(format!(
-            "novelforge-step12-{}.novelforge",
-            Uuid::new_v4()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("novelforge-step12-{}.novelforge", Uuid::new_v4()));
         cleanup_db_files(&temp_path);
 
         let (_, snapshot) = create_project(CreateProjectInput {
@@ -1579,10 +1678,98 @@ mod tests {
         assert_eq!(snapshot.project.schema_version, latest_schema_version());
         assert_eq!(snapshot.project_state.project_id, snapshot.project.id);
         assert_eq!(snapshot.project_state.last_route, "/chapters");
+        assert_eq!(snapshot.project.premise, "");
+        assert_eq!(snapshot.project.central_conflict, "");
+        assert_eq!(snapshot.project.thematic_intent, "");
+        assert_eq!(snapshot.project.ending_direction, "");
+        assert_eq!(snapshot.project.genre, "");
+        assert_eq!(snapshot.project.tone, "");
+        assert_eq!(snapshot.project.audience_notes, "");
         assert!(snapshot.chapters.is_empty());
         assert!(snapshot.scenes.is_empty());
         assert!(snapshot.characters.is_empty());
         assert!(snapshot.suggestions.is_empty());
+
+        cleanup_db_files(&temp_path);
+        Ok(())
+    }
+
+    #[test]
+    fn save_project_metadata_round_trips_story_brief_fields() -> Result<()> {
+        let temp_path = std::env::temp_dir().join(format!(
+            "novelforge-project-brief-{}.novelforge",
+            Uuid::new_v4()
+        ));
+        cleanup_db_files(&temp_path);
+
+        let (_, snapshot) = create_project(CreateProjectInput {
+            title: "Ashen Sky".to_string(),
+            logline: "A smuggler escorts a living map.".to_string(),
+            path: temp_path.to_string_lossy().into_owned(),
+        })?;
+
+        let saved_project = save_project_metadata(
+            &temp_path,
+            SaveProjectMetadataInput {
+                id: snapshot.project.id.clone(),
+                title: "Ashen Sky".to_string(),
+                logline: "A failed smuggler escorts a living star-map across a collapsing empire."
+                    .to_string(),
+                premise: "A disgraced courier becomes the only safe carrier for a living map."
+                    .to_string(),
+                central_conflict:
+                    "Every faction wants the map, and Ava does not trust herself to protect it."
+                        .to_string(),
+                thematic_intent: "Explore when responsibility turns into chosen freedom."
+                    .to_string(),
+                ending_direction: "Costly hope over escape.".to_string(),
+                genre: "Science-fantasy adventure".to_string(),
+                tone: "Tense and wonder-struck.".to_string(),
+                audience_notes: "For readers who want propulsive plotting with emotional weight."
+                    .to_string(),
+            },
+        )?;
+
+        assert_eq!(
+            saved_project.premise,
+            "A disgraced courier becomes the only safe carrier for a living map."
+        );
+        assert_eq!(
+            saved_project.central_conflict,
+            "Every faction wants the map, and Ava does not trust herself to protect it."
+        );
+        assert_eq!(
+            saved_project.thematic_intent,
+            "Explore when responsibility turns into chosen freedom."
+        );
+        assert_eq!(saved_project.ending_direction, "Costly hope over escape.");
+        assert_eq!(saved_project.genre, "Science-fantasy adventure");
+        assert_eq!(saved_project.tone, "Tense and wonder-struck.");
+        assert_eq!(
+            saved_project.audience_notes,
+            "For readers who want propulsive plotting with emotional weight."
+        );
+
+        let refreshed = get_snapshot(&temp_path)?;
+        assert_eq!(refreshed.project.premise, saved_project.premise);
+        assert_eq!(
+            refreshed.project.central_conflict,
+            saved_project.central_conflict
+        );
+        assert_eq!(
+            refreshed.project.thematic_intent,
+            saved_project.thematic_intent
+        );
+        assert_eq!(
+            refreshed.project.ending_direction,
+            saved_project.ending_direction
+        );
+        assert_eq!(refreshed.project.genre, saved_project.genre);
+        assert_eq!(refreshed.project.tone, saved_project.tone);
+        assert_eq!(
+            refreshed.project.audience_notes,
+            saved_project.audience_notes
+        );
 
         cleanup_db_files(&temp_path);
         Ok(())
@@ -1625,7 +1812,9 @@ mod tests {
                         title: "The Signal".to_string(),
                         summary: "A signal interrupts the quiet morning.".to_string(),
                         purpose: "Inciting incident".to_string(),
-                        beat_outline: "Signal appears\nThe protagonist hesitates\nThe decision gets made".to_string(),
+                        beat_outline:
+                            "Signal appears\nThe protagonist hesitates\nThe decision gets made"
+                                .to_string(),
                         conflict: "Ignore it or investigate.".to_string(),
                         outcome: "The protagonist chooses to investigate.".to_string(),
                         pov_character_id: None,
@@ -1665,7 +1854,10 @@ mod tests {
         assert_eq!(refreshed.chapters.len(), 1);
         assert_eq!(refreshed.scenes.len(), 1);
         assert_eq!(refreshed.characters.len(), 1);
-        assert_eq!(refreshed.scenes[0].chapter_id, Some(refreshed.chapters[0].id.clone()));
+        assert_eq!(
+            refreshed.scenes[0].chapter_id,
+            Some(refreshed.chapters[0].id.clone())
+        );
         assert_eq!(
             refreshed.scenes[0].beat_outline,
             "Signal appears\nThe protagonist hesitates\nThe decision gets made"

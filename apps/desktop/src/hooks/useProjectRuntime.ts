@@ -13,6 +13,7 @@ import type {
   SaveManuscriptInput,
   SaveSceneInput,
   Scene,
+  SetProjectMetadataInput,
   UpdateSuggestionStatusInput,
 } from "@novelforge/domain";
 import { tauriApi } from "@/lib/tauri";
@@ -58,6 +59,11 @@ export function useProjectRuntime() {
     const snapshot = await tauriApi.openProject(input);
     resetUi();
     return setSnapshot(snapshot);
+  }
+
+  async function setProjectMetadata(input: SetProjectMetadataInput) {
+    await tauriApi.setProjectMetadata(input);
+    return refreshSnapshot();
   }
 
   async function saveChapter(input: SaveChapterInput, event?: DomainEvent) {
@@ -145,6 +151,7 @@ export function useProjectRuntime() {
     restoreLastProject,
     createProject,
     openProject,
+    setProjectMetadata,
     closeProject,
     refreshSnapshot,
     saveChapter,

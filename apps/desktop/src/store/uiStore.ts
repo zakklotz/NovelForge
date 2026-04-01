@@ -4,7 +4,7 @@ import type { DomainEvent } from "@novelforge/domain";
 export type WorkspaceDirtyArea = "planning" | "draft";
 
 export interface WorkspaceSession {
-  kind: "scene" | "chapter";
+  kind: "scene" | "chapter" | "story";
   entityId: string;
   entityTitle: string;
   dirtyAreas: WorkspaceDirtyArea[];

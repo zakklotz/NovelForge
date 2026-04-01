@@ -3,7 +3,6 @@ import {
   aiProviderIdSchema,
   chapterSchema,
   characterSchema,
-  projectSchema,
   projectStateSchema,
   scratchpadActionSchema,
   scratchpadMessageSchema,
@@ -231,11 +230,17 @@ export type UpdateSuggestionStatusInput = z.infer<
 export const saveProjectStateInputSchema = projectStateSchema;
 export type SaveProjectStateInput = z.infer<typeof saveProjectStateInputSchema>;
 
-export const setProjectMetadataInputSchema = projectSchema.pick({
-  id: true,
-  title: true,
-  logline: true,
-  settings: true,
+export const setProjectMetadataInputSchema = z.object({
+  id: z.string(),
+  title: z.string().min(1),
+  logline: z.string().default(""),
+  premise: z.string().default(""),
+  centralConflict: z.string().default(""),
+  thematicIntent: z.string().default(""),
+  endingDirection: z.string().default(""),
+  genre: z.string().default(""),
+  tone: z.string().default(""),
+  audienceNotes: z.string().default(""),
 });
 
 export type SetProjectMetadataInput = z.infer<

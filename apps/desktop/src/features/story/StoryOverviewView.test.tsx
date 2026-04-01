@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { SaveChapterInput } from "@novelforge/domain";
+import type { SaveChapterInput, SetProjectMetadataInput } from "@novelforge/domain";
 import { sampleProjectSnapshot } from "@novelforge/test-fixtures";
 import { AppRouter } from "@/router";
 import { useUiStore } from "@/store/uiStore";
@@ -12,6 +12,7 @@ const tauriApiMock = vi.hoisted(() => ({
   restoreLastProject: vi.fn(),
   closeProject: vi.fn(),
   getProjectSnapshot: vi.fn(),
+  setProjectMetadata: vi.fn(),
   saveChapter: vi.fn(),
   reorderChapters: vi.fn(),
   syncSuggestions: vi.fn(),
@@ -32,6 +33,7 @@ vi.mock("@/lib/tauri", () => ({
     restoreLastProject: tauriApiMock.restoreLastProject,
     closeProject: tauriApiMock.closeProject,
     getProjectSnapshot: tauriApiMock.getProjectSnapshot,
+    setProjectMetadata: tauriApiMock.setProjectMetadata,
     saveChapter: tauriApiMock.saveChapter,
     reorderChapters: tauriApiMock.reorderChapters,
     saveScene: vi.fn(),
@@ -203,6 +205,21 @@ describe("StoryOverviewView", () => {
     tauriApiMock.restoreLastProject.mockResolvedValue(null);
     tauriApiMock.closeProject.mockResolvedValue(undefined);
     tauriApiMock.getProjectSnapshot.mockImplementation(async () => currentSnapshot);
+    tauriApiMock.setProjectMetadata.mockImplementation(
+      async (input: SetProjectMetadataInput) => {
+        const savedProject = {
+          ...currentSnapshot.project,
+          ...input,
+          title: input.title.trim(),
+          updatedAt: "2026-04-01T12:00:00.000Z",
+        };
+        currentSnapshot = {
+          ...currentSnapshot,
+          project: savedProject,
+        };
+        return savedProject;
+      },
+    );
     tauriApiMock.saveChapter.mockImplementation(async (input: SaveChapterInput) => {
       const savedChapter = {
         ...input,
@@ -304,6 +321,97 @@ describe("StoryOverviewView", () => {
         orderIndex: 2,
       }),
     );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("edits and saves the top-level story brief from the story workspace", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value:
+          "A disgraced smuggler becomes the only safe carrier for a living star-map.",
+      },
+    });
+    fireEvent.change(screen.getByLabelText(/^Ending Direction/), {
+      target: {
+        value: "Land on a costly but hopeful ending where Ava chooses responsibility.",
+      },
+    });
+    fireEvent.change(screen.getByLabelText(/^Tone/), {
+      target: { value: "Tense, intimate, and wonder-struck." },
+    });
+
+    expect(screen.getByText("3 fields changed")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save Story Brief" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.setProjectMetadata).toHaveBeenCalledWith({
+        id: sampleProjectSnapshot.project.id,
+        title: sampleProjectSnapshot.project.title,
+        logline: sampleProjectSnapshot.project.logline,
+        premise:
+          "A disgraced smuggler becomes the only safe carrier for a living star-map.",
+        centralConflict: sampleProjectSnapshot.project.centralConflict,
+        thematicIntent: sampleProjectSnapshot.project.thematicIntent,
+        endingDirection:
+          "Land on a costly but hopeful ending where Ava chooses responsibility.",
+        genre: sampleProjectSnapshot.project.genre,
+        tone: "Tense, intimate, and wonder-struck.",
+        audienceNotes: sampleProjectSnapshot.project.audienceNotes,
+      });
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Brief is in sync")).toBeTruthy();
+    });
+
+    expect(currentSnapshot.project.premise).toBe(
+      "A disgraced smuggler becomes the only safe carrier for a living star-map.",
+    );
+    expect(currentSnapshot.project.endingDirection).toBe(
+      "Land on a costly but hopeful ending where Ava chooses responsibility.",
+    );
+    expect(currentSnapshot.project.tone).toBe("Tense, intimate, and wonder-struck.");
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved story brief edits in place when the spine refreshes", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value: "A living map chooses the one courier least willing to protect it.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add Chapter",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("article")).toHaveLength(3);
+    });
+
+    expect(
+      (screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value,
+    ).toBe("A living map chooses the one courier least willing to protect it.");
+    expect(screen.getByText("1 field changed")).toBeTruthy();
 
     unmount();
     queryClient.clear();

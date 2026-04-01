@@ -3,8 +3,8 @@ mod app_settings;
 mod commands;
 mod db;
 mod models;
-mod state;
 mod startup_state;
+mod state;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::{Emitter, Manager};
@@ -84,6 +84,7 @@ pub fn run() {
             commands::restore_last_project,
             commands::close_project,
             commands::get_project_snapshot,
+            commands::set_project_metadata,
             commands::save_chapter,
             commands::reorder_chapters,
             commands::save_scene,

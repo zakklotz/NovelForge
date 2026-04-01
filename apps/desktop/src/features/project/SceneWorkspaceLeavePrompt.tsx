@@ -43,8 +43,16 @@ function describeNavigationTarget(pathname: string) {
   return "leave this workspace";
 }
 
-function describeWorkspaceLabel(kind: "scene" | "chapter") {
-  return kind === "chapter" ? "chapter" : "scene";
+function describeWorkspaceLabel(kind: "scene" | "chapter" | "story") {
+  if (kind === "chapter") {
+    return "chapter";
+  }
+
+  if (kind === "story") {
+    return "story";
+  }
+
+  return "scene";
 }
 
 function toErrorMessage(error: unknown, workspaceLabel: string) {

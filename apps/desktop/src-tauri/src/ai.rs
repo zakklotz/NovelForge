@@ -8,11 +8,11 @@ use tauri::AppHandle;
 
 use crate::app_settings::get_provider_api_key;
 use crate::models::{
-    Chapter, ChapterProposal, Character, CharacterProposal, ProjectSnapshot, RecommendedModel,
-    ProviderConnectionResult, Relationship, RunScratchpadChatInput, RunStructuredAIActionInput,
-    Scene, SceneProposal, ScratchpadChatResponse, ScratchpadMessage, ScratchpadProjectContext,
-    ScratchpadResult, StoryDiagnosticEntry, StoryStructureDiagnostic, StructuredAIResponse,
-    StructuredAIResult, TestProviderConnectionInput,
+    Chapter, ChapterProposal, Character, CharacterProposal, ProjectSnapshot,
+    ProviderConnectionResult, RecommendedModel, Relationship, RunScratchpadChatInput,
+    RunStructuredAIActionInput, Scene, SceneProposal, ScratchpadChatResponse, ScratchpadMessage,
+    ScratchpadProjectContext, ScratchpadResult, StoryDiagnosticEntry, StoryStructureDiagnostic,
+    StructuredAIResponse, StructuredAIResult, TestProviderConnectionInput,
 };
 
 const GEMINI_API_BASE: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -299,7 +299,9 @@ fn resolve_api_key(
 
     get_provider_api_key(app, provider_id)?
         .filter(|value| !value.trim().is_empty())
-        .ok_or_else(|| anyhow!("Add an API key for {provider_id} in Settings before using this provider."))
+        .ok_or_else(|| {
+            anyhow!("Add an API key for {provider_id} in Settings before using this provider.")
+        })
 }
 
 fn normalize_message_history(messages: &[ScratchpadMessage]) -> Vec<ScratchpadMessage> {
@@ -341,7 +343,13 @@ fn plain_text_to_html(value: &str) -> String {
     let normalized = trimmed.replace("\r\n", "\n");
     let paragraphs = normalized
         .split("\n\n")
-        .map(|paragraph| paragraph.lines().map(escape_html).collect::<Vec<_>>().join("<br />"))
+        .map(|paragraph| {
+            paragraph
+                .lines()
+                .map(escape_html)
+                .collect::<Vec<_>>()
+                .join("<br />")
+        })
         .filter(|paragraph| !paragraph.trim().is_empty())
         .map(|paragraph| format!("<p>{paragraph}</p>"))
         .collect::<Vec<_>>();
@@ -361,7 +369,10 @@ fn ensure_manuscript_html(value: &str) -> String {
     }
 }
 
-fn selected_chapters(snapshot: &ProjectSnapshot, context: &ScratchpadProjectContext) -> Vec<Chapter> {
+fn selected_chapters(
+    snapshot: &ProjectSnapshot,
+    context: &ScratchpadProjectContext,
+) -> Vec<Chapter> {
     snapshot
         .chapters
         .iter()
@@ -395,13 +406,24 @@ fn selected_characters(
         .collect()
 }
 
+fn build_project_brief_context(snapshot: &ProjectSnapshot) -> Value {
+    json!({
+        "id": snapshot.project.id,
+        "title": snapshot.project.title,
+        "logline": snapshot.project.logline,
+        "premise": snapshot.project.premise,
+        "centralConflict": snapshot.project.central_conflict,
+        "thematicIntent": snapshot.project.thematic_intent,
+        "endingDirection": snapshot.project.ending_direction,
+        "genre": snapshot.project.genre,
+        "tone": snapshot.project.tone,
+        "audienceNotes": snapshot.project.audience_notes,
+    })
+}
+
 fn build_context_blob(snapshot: &ProjectSnapshot, context: &ScratchpadProjectContext) -> String {
     serde_json::to_string_pretty(&json!({
-        "project": {
-            "id": snapshot.project.id,
-            "title": snapshot.project.title,
-            "logline": snapshot.project.logline,
-        },
+        "project": build_project_brief_context(snapshot),
         "selectedChapters": selected_chapters(snapshot, context),
         "selectedScenes": selected_scenes(snapshot, context),
         "selectedCharacters": selected_characters(snapshot, context),
@@ -466,11 +488,7 @@ fn build_chapter_structured_context(
         .collect::<Vec<_>>();
 
     serde_json::to_string_pretty(&json!({
-        "project": {
-            "id": snapshot.project.id,
-            "title": snapshot.project.title,
-            "logline": snapshot.project.logline,
-        },
+        "project": build_project_brief_context(snapshot),
         "targetChapter": chapter,
         "existingChapterScenes": chapter_scenes,
         "focusedCharacters": relevant_characters,
@@ -491,7 +509,12 @@ fn build_scene_structured_context(snapshot: &ProjectSnapshot, scene_id: &str) ->
     let chapter = scene
         .chapter_id
         .as_ref()
-        .and_then(|chapter_id| snapshot.chapters.iter().find(|chapter| &chapter.id == chapter_id))
+        .and_then(|chapter_id| {
+            snapshot
+                .chapters
+                .iter()
+                .find(|chapter| &chapter.id == chapter_id)
+        })
         .cloned();
 
     let chapter_scenes = snapshot
@@ -539,11 +562,7 @@ fn build_scene_structured_context(snapshot: &ProjectSnapshot, scene_id: &str) ->
         .collect::<Vec<_>>();
 
     serde_json::to_string_pretty(&json!({
-        "project": {
-            "id": snapshot.project.id,
-            "title": snapshot.project.title,
-            "logline": snapshot.project.logline,
-        },
+        "project": build_project_brief_context(snapshot),
         "chapter": chapter,
         "scene": truncated_scene_for_context(&scene),
         "previousScene": previous_scene,
@@ -623,11 +642,7 @@ fn build_story_structured_context(snapshot: &ProjectSnapshot) -> Result<String> 
     unassigned_scenes.sort_by_key(|scene| scene.order_index);
 
     serde_json::to_string_pretty(&json!({
-        "project": {
-            "id": snapshot.project.id,
-            "title": snapshot.project.title,
-            "logline": snapshot.project.logline,
-        },
+        "project": build_project_brief_context(snapshot),
         "storySpine": story_spine,
         "unassignedScenes": unassigned_scenes
             .iter()
@@ -651,12 +666,8 @@ fn build_story_structured_context(snapshot: &ProjectSnapshot) -> Result<String> 
 
 fn action_brief(action: &str) -> &'static str {
     match action {
-        "create-chapters" => {
-            "Create or refine chapter-level structure from the pasted material."
-        }
-        "create-scenes" => {
-            "Break the pasted material into scene-level units with usable metadata."
-        }
+        "create-chapters" => "Create or refine chapter-level structure from the pasted material.",
+        "create-scenes" => "Break the pasted material into scene-level units with usable metadata.",
         "create-character-card" => {
             "Turn the pasted material into one or more structured character cards."
         }
@@ -1132,10 +1143,7 @@ fn parse_scratchpad_response(raw_text: &str) -> (String, ScratchpadResult) {
     }
 }
 
-fn parse_structured_action_response(
-    action: &str,
-    raw_text: &str,
-) -> (String, StructuredAIResult) {
+fn parse_structured_action_response(action: &str, raw_text: &str) -> (String, StructuredAIResult) {
     let payload = extract_json_payload(raw_text);
     match serde_json::from_str::<RawStructuredActionEnvelope>(&payload) {
         Ok(parsed) => {
@@ -1357,7 +1365,10 @@ async fn send_provider_request(
                 system_prompt,
                 messages,
                 user_prompt,
-                &[("HTTP-Referer", "https://novelforge.local"), ("X-Title", "NovelForge")],
+                &[
+                    ("HTTP-Referer", "https://novelforge.local"),
+                    ("X-Title", "NovelForge"),
+                ],
             )
             .await
         }
@@ -1385,7 +1396,10 @@ pub async fn test_provider_connection(
         provider_id: input.provider_id,
         model_id: input.model_id,
         success: true,
-        message: format!("Provider responded successfully: {}", truncate_text(&response, 120)),
+        message: format!(
+            "Provider responded successfully: {}",
+            truncate_text(&response, 120)
+        ),
     })
 }
 
@@ -1529,7 +1543,10 @@ mod tests {
 
         assert_eq!(assistant_message, "Proposed three scenes.");
         assert_eq!(result.scene_proposals.len(), 1);
-        assert_eq!(result.scene_proposals[0].chapter_id, Some("chapter-1".to_string()));
+        assert_eq!(
+            result.scene_proposals[0].chapter_id,
+            Some("chapter-1".to_string())
+        );
     }
 
     #[test]
@@ -1577,7 +1594,13 @@ mod tests {
             parse_structured_action_response("story-diagnose-structure", raw);
 
         assert_eq!(assistant_message, "Reviewed the whole spine.");
-        assert_eq!(result.story_structure_diagnostic.underdefined_chapters.len(), 1);
+        assert_eq!(
+            result
+                .story_structure_diagnostic
+                .underdefined_chapters
+                .len(),
+            1
+        );
         assert_eq!(
             result.story_structure_diagnostic.underdefined_chapters[0]
                 .focus
@@ -1585,8 +1608,17 @@ mod tests {
                 .map(|reference| reference.id.as_str()),
             Some("chapter-2")
         );
-        assert_eq!(result.story_structure_diagnostic.missing_transitions.len(), 1);
-        assert_eq!(result.story_structure_diagnostic.next_planning_targets.len(), 1);
+        assert_eq!(
+            result.story_structure_diagnostic.missing_transitions.len(),
+            1
+        );
+        assert_eq!(
+            result
+                .story_structure_diagnostic
+                .next_planning_targets
+                .len(),
+            1
+        );
     }
 
     #[test]

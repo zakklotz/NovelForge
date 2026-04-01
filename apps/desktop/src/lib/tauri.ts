@@ -9,6 +9,7 @@ import type {
   MoveSceneInput,
   OpenProjectInput,
   ProviderConnectionResult,
+  Project,
   ProjectSnapshot,
   ProjectState,
   RecommendedModel,
@@ -22,6 +23,7 @@ import type {
   ScratchpadChatResponse,
   StructuredAiResponse,
   Suggestion,
+  SetProjectMetadataInput,
   TestProviderConnectionInput,
   UpdateSuggestionStatusInput,
 } from "@novelforge/domain";
@@ -42,6 +44,8 @@ export const tauriApi = {
   closeProject: () => invoke<void>("close_project"),
   getProjectSnapshot: () =>
     invoke<ProjectSnapshot>("get_project_snapshot"),
+  setProjectMetadata: (input: SetProjectMetadataInput) =>
+    invoke<Project>("set_project_metadata", { input }),
   saveChapter: (input: SaveChapterInput) =>
     invoke<Chapter>("save_chapter", { input }),
   reorderChapters: (projectId: string, chapterIds: string[]) =>

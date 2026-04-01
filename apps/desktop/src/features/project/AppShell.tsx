@@ -389,7 +389,8 @@ export function AppShell({
             <p className="mt-2 text-sm text-white/70">
               {snapshot
                 ? snapshot.project.logline ||
-                  "Add a logline to sharpen the story spine."
+                  snapshot.project.premise ||
+                  "Add a story brief to sharpen the planning spine."
                 : "Local-first story workspace for chapters, scenes, characters, and structured revision support."}
             </p>
             {snapshot ? (

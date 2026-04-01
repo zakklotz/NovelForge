@@ -7,7 +7,19 @@ export const sampleProjectSnapshot: ProjectSnapshot = {
     id: "project-ashen-sky",
     title: "Ashen Sky",
     logline: "A failed smuggler has one week to escort a living star-map through a collapsing empire.",
-    schemaVersion: 2,
+    premise:
+      "A disgraced smuggler becomes guardian to a living star-map that could redraw power across a dying empire.",
+    centralConflict:
+      "Ava must keep the map alive and moving while every faction around her wants to own, weaponize, or silence it.",
+    thematicIntent:
+      "Test whether responsibility can become an act of freedom instead of another chain.",
+    endingDirection:
+      "Aim for a costly but hopeful ending where Ava chooses stewardship over escape.",
+    genre: "Science-fantasy adventure",
+    tone: "Tense, intimate, and wonder-struck under pressure.",
+    audienceNotes:
+      "Adult crossover readers who want high-stakes plotting with character-forward emotional turns.",
+    schemaVersion: 3,
     settings: {
       autosaveIntervalMs: 1500,
       autoAnalyze: true,

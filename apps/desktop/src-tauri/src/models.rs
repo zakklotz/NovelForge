@@ -53,6 +53,13 @@ pub struct Project {
     pub id: String,
     pub title: String,
     pub logline: String,
+    pub premise: String,
+    pub central_conflict: String,
+    pub thematic_intent: String,
+    pub ending_direction: String,
+    pub genre: String,
+    pub tone: String,
+    pub audience_notes: String,
     pub schema_version: i64,
     pub settings: ProjectSettings,
     pub created_at: String,
@@ -394,6 +401,21 @@ pub struct CreateProjectInput {
 #[serde(rename_all = "camelCase")]
 pub struct OpenProjectInput {
     pub path: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SaveProjectMetadataInput {
+    pub id: String,
+    pub title: String,
+    pub logline: String,
+    pub premise: String,
+    pub central_conflict: String,
+    pub thematic_intent: String,
+    pub ending_direction: String,
+    pub genre: String,
+    pub tone: String,
+    pub audience_notes: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

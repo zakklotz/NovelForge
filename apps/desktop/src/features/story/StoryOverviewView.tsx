@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type {
   Chapter,
   DomainObjectRef,
+  Project,
   ProjectSnapshot,
   Scene,
   StoryStructureDiagnostic,
@@ -14,9 +15,19 @@ import {
   ChevronRight,
   Plus,
   RefreshCw,
+  Save,
   WandSparkles,
 } from "lucide-react";
-import { Badge, Button, EmptyState, Panel, SectionHeading } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  Field,
+  Input,
+  Panel,
+  SectionHeading,
+  Textarea,
+} from "@/components/ui";
 import { useAiRuntime } from "@/hooks/useAiRuntime";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
@@ -42,6 +53,81 @@ interface StoryReferenceJumpTarget {
   id: string;
   chapterId: string | null;
   label: string;
+}
+
+interface StoryBriefState {
+  title: string;
+  logline: string;
+  premise: string;
+  centralConflict: string;
+  thematicIntent: string;
+  endingDirection: string;
+  genre: string;
+  tone: string;
+  audienceNotes: string;
+}
+
+function emptyStoryBriefState(): StoryBriefState {
+  return {
+    title: "",
+    logline: "",
+    premise: "",
+    centralConflict: "",
+    thematicIntent: "",
+    endingDirection: "",
+    genre: "",
+    tone: "",
+    audienceNotes: "",
+  };
+}
+
+function buildStoryBriefState(project: Project): StoryBriefState {
+  return {
+    title: project.title,
+    logline: project.logline,
+    premise: project.premise,
+    centralConflict: project.centralConflict,
+    thematicIntent: project.thematicIntent,
+    endingDirection: project.endingDirection,
+    genre: project.genre,
+    tone: project.tone,
+    audienceNotes: project.audienceNotes,
+  };
+}
+
+function areStoryBriefStatesEqual(left: StoryBriefState, right: StoryBriefState) {
+  return (
+    left.title === right.title &&
+    left.logline === right.logline &&
+    left.premise === right.premise &&
+    left.centralConflict === right.centralConflict &&
+    left.thematicIntent === right.thematicIntent &&
+    left.endingDirection === right.endingDirection &&
+    left.genre === right.genre &&
+    left.tone === right.tone &&
+    left.audienceNotes === right.audienceNotes
+  );
+}
+
+function getChangedStoryBriefFields(
+  draft: StoryBriefState,
+  persisted: StoryBriefState,
+) {
+  return [
+    draft.title !== persisted.title ? "title" : null,
+    draft.logline !== persisted.logline ? "logline" : null,
+    draft.premise !== persisted.premise ? "premise" : null,
+    draft.centralConflict !== persisted.centralConflict ? "centralConflict" : null,
+    draft.thematicIntent !== persisted.thematicIntent ? "thematicIntent" : null,
+    draft.endingDirection !== persisted.endingDirection ? "endingDirection" : null,
+    draft.genre !== persisted.genre ? "genre" : null,
+    draft.tone !== persisted.tone ? "tone" : null,
+    draft.audienceNotes !== persisted.audienceNotes ? "audienceNotes" : null,
+  ].filter((value): value is string => Boolean(value));
+}
+
+function countFilledStoryBriefFields(storyBrief: StoryBriefState) {
+  return Object.values(storyBrief).filter((value) => value.trim().length > 0).length;
 }
 
 function buildOrderedChapters(snapshot: ProjectSnapshot) {
@@ -342,18 +428,97 @@ export function StoryOverviewView() {
   const snapshotQuery = useProjectSnapshot();
   const appSettingsQuery = useAppSettings();
   const { runStructuredAiAction } = useAiRuntime();
-  const { reorderChapters, saveChapter } = useProjectRuntime();
+  const { reorderChapters, saveChapter, setProjectMetadata } = useProjectRuntime();
   const searchText = useUiStore((state) => state.searchText);
+  const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
   const appSettings = appSettingsQuery.data;
+  const [storyBrief, setStoryBrief] = useState<StoryBriefState>(() =>
+    snapshot ? buildStoryBriefState(snapshot.project) : emptyStoryBriefState(),
+  );
+  const [persistedStoryBrief, setPersistedStoryBrief] = useState<StoryBriefState>(() =>
+    snapshot ? buildStoryBriefState(snapshot.project) : emptyStoryBriefState(),
+  );
+  const storyBriefRef = useRef(storyBrief);
+  const currentProjectRef = useRef(snapshot?.project ?? null);
+  const activeProjectIdRef = useRef<string | null>(null);
+  const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
+  const [isSavingStoryBrief, setIsSavingStoryBrief] = useState(false);
   const [isAddingChapter, setIsAddingChapter] = useState(false);
   const [movingChapterId, setMovingChapterId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [storyBriefError, setStoryBriefError] = useState<string | null>(null);
   const [storyDiagnosticResponse, setStoryDiagnosticResponse] =
     useState<StructuredAiResponse | null>(null);
   const [isAnalyzingStory, setIsAnalyzingStory] = useState(false);
   const [storyDiagnosticError, setStoryDiagnosticError] = useState<string | null>(null);
+  const storyBriefDirty =
+    Boolean(snapshot) && !areStoryBriefStatesEqual(storyBrief, persistedStoryBrief);
+  const dirtyStoryBriefFields = storyBriefDirty
+    ? getChangedStoryBriefFields(storyBrief, persistedStoryBrief)
+    : [];
+  const dirtyAreas = storyBriefDirty ? (["planning"] as const) : [];
+  const canSaveStoryBrief = storyBrief.title.trim().length > 0;
+
+  useEffect(() => {
+    storyBriefRef.current = storyBrief;
+  }, [storyBrief]);
+
+  useEffect(() => {
+    currentProjectRef.current = snapshot?.project ?? null;
+  }, [snapshot?.project]);
+
+  useEffect(() => {
+    if (!snapshot) {
+      return;
+    }
+
+    const nextPersistedStoryBrief = buildStoryBriefState(snapshot.project);
+    const projectChanged = activeProjectIdRef.current !== snapshot.project.id;
+    activeProjectIdRef.current = snapshot.project.id;
+
+    setPersistedStoryBrief((currentPersistedStoryBrief) => {
+      if (
+        projectChanged ||
+        areStoryBriefStatesEqual(storyBriefRef.current, currentPersistedStoryBrief)
+      ) {
+        setStoryBrief(nextPersistedStoryBrief);
+      }
+
+      return nextPersistedStoryBrief;
+    });
+  }, [snapshot]);
+
+  useLayoutEffect(() => {
+    if (!snapshot) {
+      setWorkspaceSession(null);
+      return;
+    }
+
+    setWorkspaceSession({
+      kind: "story",
+      entityId: snapshot.project.id,
+      entityTitle: storyBrief.title.trim() || snapshot.project.title || "Story Brief",
+      dirtyAreas: [...dirtyAreas],
+      saveChanges: saveCurrentStoryBriefChanges,
+      discardChanges: discardCurrentStoryBriefChanges,
+    });
+  }, [dirtyAreas, setWorkspaceSession, snapshot, storyBrief.title]);
+
+  useLayoutEffect(() => {
+    const currentProjectId = snapshot?.project.id;
+    if (!currentProjectId) {
+      return;
+    }
+
+    return () => {
+      const session = useUiStore.getState().workspaceSession;
+      if (session?.kind === "story" && session.entityId === currentProjectId) {
+        useUiStore.getState().setWorkspaceSession(null);
+      }
+    };
+  }, [snapshot?.project.id]);
 
   if (!snapshot) {
     return null;
@@ -406,7 +571,74 @@ export function StoryOverviewView() {
       (storyDiagnosticResponse?.result.storyStructureDiagnostic[section.key].length ?? 0),
     0,
   );
+  const filledStoryBriefFieldCount = countFilledStoryBriefFields(storyBrief);
   const isMutatingStructure = isAddingChapter || movingChapterId !== null;
+
+  function updateStoryBriefField<Key extends keyof StoryBriefState>(
+    field: Key,
+    value: StoryBriefState[Key],
+  ) {
+    setStoryBriefError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setStoryBrief((current) => ({ ...current, [field]: value }));
+  }
+
+  async function saveCurrentStoryBriefChanges() {
+    if (workspaceSavePromiseRef.current) {
+      return workspaceSavePromiseRef.current;
+    }
+
+    const projectToSave = currentProjectRef.current;
+    if (!projectToSave || !storyBriefDirty) {
+      return;
+    }
+
+    if (!canSaveStoryBrief) {
+      throw new Error("Project title cannot be empty.");
+    }
+
+    setIsSavingStoryBrief(true);
+    setStoryBriefError(null);
+
+    const savePromise = (async () => {
+      await setProjectMetadata({
+        id: projectToSave.id,
+        title: storyBrief.title.trim(),
+        logline: storyBrief.logline,
+        premise: storyBrief.premise,
+        centralConflict: storyBrief.centralConflict,
+        thematicIntent: storyBrief.thematicIntent,
+        endingDirection: storyBrief.endingDirection,
+        genre: storyBrief.genre,
+        tone: storyBrief.tone,
+        audienceNotes: storyBrief.audienceNotes,
+      });
+    })().finally(() => {
+      workspaceSavePromiseRef.current = null;
+      setIsSavingStoryBrief(false);
+    });
+
+    workspaceSavePromiseRef.current = savePromise;
+    return savePromise;
+  }
+
+  async function discardCurrentStoryBriefChanges() {
+    setStoryBriefError(null);
+    setStoryBrief(persistedStoryBrief);
+  }
+
+  async function handleSaveStoryBrief() {
+    try {
+      await saveCurrentStoryBriefChanges();
+    } catch (error) {
+      setStoryBriefError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not save the story brief.",
+      );
+    }
+  }
 
   async function handleAddChapter() {
     setActionError(null);
@@ -521,13 +753,19 @@ export function StoryOverviewView() {
     <Panel className="h-full min-h-0">
       <SectionHeading
         title="Story Spine"
-        description="Scan the full story in chapter order, spot obvious structural gaps, and jump straight into chapter or scene workspaces when something needs attention."
+        description="Define what the story is trying to be, then scan the full chapter spine in order so planning and diagnostics have a stronger anchor."
         actions={
           <div className="flex flex-wrap gap-3">
             <Button
               variant="secondary"
               onClick={() => void handleAnalyzeStoryStructure()}
-              disabled={!hasConfiguredAi || isMutatingStructure || isAnalyzingStory}
+              disabled={
+                !hasConfiguredAi ||
+                isMutatingStructure ||
+                isAnalyzingStory ||
+                isSavingStoryBrief ||
+                storyBriefDirty
+              }
             >
               {isAnalyzingStory ? (
                 <RefreshCw className="size-4 animate-spin" />
@@ -550,6 +788,181 @@ export function StoryOverviewView() {
           </div>
         }
       />
+
+      <Panel className="mt-6 bg-white/82 shadow-none">
+        <SectionHeading
+          title="Story Brief"
+          description="Capture the top-level story intent here so the spine, diagnostics, and later AI context all point at the same target."
+          actions={
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="ghost"
+                onClick={() => void discardCurrentStoryBriefChanges()}
+                disabled={!storyBriefDirty || isSavingStoryBrief}
+              >
+                Discard Changes
+              </Button>
+              <Button
+                onClick={() => void handleSaveStoryBrief()}
+                disabled={!storyBriefDirty || !canSaveStoryBrief || isSavingStoryBrief}
+              >
+                <Save className="size-4" />
+                {isSavingStoryBrief
+                  ? "Saving..."
+                  : storyBriefDirty
+                    ? "Save Story Brief"
+                    : "Saved"}
+              </Button>
+            </div>
+          }
+        />
+
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Badge tone="accent">
+            {filledStoryBriefFieldCount} of 9 anchors filled
+          </Badge>
+          <Badge tone={storyBriefDirty ? "warning" : "default"}>
+            {storyBriefDirty
+              ? `${dirtyStoryBriefFields.length} field${
+                  dirtyStoryBriefFields.length === 1 ? "" : "s"
+                } changed`
+              : "Brief is in sync"}
+          </Badge>
+        </div>
+
+        {storyBriefError ? (
+          <Panel className="mt-4 bg-[color:rgba(174,67,45,0.08)] shadow-none">
+            <p className="text-sm text-[var(--danger)]">{storyBriefError}</p>
+          </Panel>
+        ) : null}
+
+        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.95fr)]">
+          <div className="grid gap-4">
+            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                Core Story
+              </p>
+              <div className="mt-4 grid gap-4">
+                <Field label="Title" hint="Working title">
+                  <Input
+                    value={storyBrief.title}
+                    onChange={(event) =>
+                      updateStoryBriefField("title", event.target.value)
+                    }
+                    placeholder="Ashen Sky"
+                  />
+                </Field>
+
+                <Field label="Logline" hint="1-2 sentences">
+                  <Textarea
+                    rows={3}
+                    value={storyBrief.logline}
+                    onChange={(event) =>
+                      updateStoryBriefField("logline", event.target.value)
+                    }
+                    placeholder="Who wants what, what stands in the way, and why it matters."
+                  />
+                </Field>
+
+                <Field label="Premise" hint="Situation and setup">
+                  <Textarea
+                    rows={4}
+                    value={storyBrief.premise}
+                    onChange={(event) =>
+                      updateStoryBriefField("premise", event.target.value)
+                    }
+                    placeholder="State the core setup the story is built around."
+                  />
+                </Field>
+
+                <Field label="Central Conflict" hint="What makes the story hard?">
+                  <Textarea
+                    rows={4}
+                    value={storyBrief.centralConflict}
+                    onChange={(event) =>
+                      updateStoryBriefField("centralConflict", event.target.value)
+                    }
+                    placeholder="Name the pressure, opposition, or impossible bind driving the story."
+                  />
+                </Field>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                Intent and Direction
+              </p>
+              <div className="mt-4 grid gap-4">
+                <Field label="Thematic Intent" hint="What is this exploring?">
+                  <Textarea
+                    rows={4}
+                    value={storyBrief.thematicIntent}
+                    onChange={(event) =>
+                      updateStoryBriefField("thematicIntent", event.target.value)
+                    }
+                    placeholder="Describe the human question, tension, or idea the story wants to test."
+                  />
+                </Field>
+
+                <Field label="Ending Direction" hint="How should it resolve?">
+                  <Textarea
+                    rows={4}
+                    value={storyBrief.endingDirection}
+                    onChange={(event) =>
+                      updateStoryBriefField("endingDirection", event.target.value)
+                    }
+                    placeholder="Point toward the kind of ending the story is aiming for, even if the details may change."
+                  />
+                </Field>
+              </div>
+            </div>
+
+            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                Positioning Notes
+              </p>
+              <div className="mt-4 grid gap-4 md:grid-cols-2">
+                <Field label="Genre" hint="Optional">
+                  <Input
+                    value={storyBrief.genre}
+                    onChange={(event) =>
+                      updateStoryBriefField("genre", event.target.value)
+                    }
+                    placeholder="Science-fantasy adventure"
+                  />
+                </Field>
+
+                <Field label="Tone" hint="Optional">
+                  <Input
+                    value={storyBrief.tone}
+                    onChange={(event) =>
+                      updateStoryBriefField("tone", event.target.value)
+                    }
+                    placeholder="Tense, intimate, and wonder-struck"
+                  />
+                </Field>
+
+                <Field
+                  label="Audience Notes"
+                  hint="Optional"
+                  className="md:col-span-2"
+                >
+                  <Textarea
+                    rows={3}
+                    value={storyBrief.audienceNotes}
+                    onChange={(event) =>
+                      updateStoryBriefField("audienceNotes", event.target.value)
+                    }
+                    placeholder="Capture any audience, shelf, or reading-experience notes worth protecting."
+                  />
+                </Field>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Panel>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3">
         <div className="rounded-2xl border border-black/8 bg-white/70 px-4 py-4">
