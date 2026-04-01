@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use anyhow::{anyhow, Result};
 use tauri::{AppHandle, State};
 
-use crate::{ai, app_settings, db};
+use crate::{ai, app_settings, db, startup_state};
 use crate::models::{
     ApplyScratchpadResultInput, ApplyScratchpadResultOutput, ApplySuggestionInput, AppSettings,
     CreateProjectInput, DismissSuggestionInput, MoveSceneInput, OpenProjectInput, ProjectSnapshot,
@@ -32,24 +32,75 @@ fn store_current_path(state: &State<'_, AppState>, path: PathBuf) -> Result<()> 
     Ok(())
 }
 
+fn clear_current_path(state: &State<'_, AppState>) -> Result<()> {
+    let mut guard = state
+        .current_project_path
+        .lock()
+        .map_err(|_| anyhow!("Failed to lock project state."))?;
+    *guard = None;
+    Ok(())
+}
+
 #[tauri::command]
 pub fn create_project(
+    app: AppHandle,
     state: State<'_, AppState>,
     input: CreateProjectInput,
 ) -> Result<ProjectSnapshot, String> {
     let (path, snapshot) = db::create_project(input).map_err(|error| error.to_string())?;
-    store_current_path(&state, path).map_err(|error| error.to_string())?;
+    store_current_path(&state, path.clone()).map_err(|error| error.to_string())?;
+    startup_state::remember_last_project(&app, &path).map_err(|error| error.to_string())?;
     Ok(snapshot)
 }
 
 #[tauri::command]
 pub fn open_project(
+    app: AppHandle,
     state: State<'_, AppState>,
     input: OpenProjectInput,
 ) -> Result<ProjectSnapshot, String> {
     let (path, snapshot) = db::open_project(input).map_err(|error| error.to_string())?;
-    store_current_path(&state, path).map_err(|error| error.to_string())?;
+    store_current_path(&state, path.clone()).map_err(|error| error.to_string())?;
+    startup_state::remember_last_project(&app, &path).map_err(|error| error.to_string())?;
     Ok(snapshot)
+}
+
+#[tauri::command]
+pub fn restore_last_project(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<ProjectSnapshot>, String> {
+    let Some(path) = startup_state::load_last_project(&app).map_err(|error| error.to_string())? else {
+        clear_current_path(&state).map_err(|error| error.to_string())?;
+        return Ok(None);
+    };
+
+    if !path.exists() {
+        startup_state::clear_last_project(&app).map_err(|error| error.to_string())?;
+        clear_current_path(&state).map_err(|error| error.to_string())?;
+        return Ok(None);
+    }
+
+    match db::open_project(OpenProjectInput {
+        path: path.to_string_lossy().into_owned(),
+    }) {
+        Ok((resolved_path, snapshot)) => {
+            store_current_path(&state, resolved_path.clone()).map_err(|error| error.to_string())?;
+            startup_state::remember_last_project(&app, &resolved_path)
+                .map_err(|error| error.to_string())?;
+            Ok(Some(snapshot))
+        }
+        Err(_) => {
+            startup_state::clear_last_project(&app).map_err(|error| error.to_string())?;
+            clear_current_path(&state).map_err(|error| error.to_string())?;
+            Ok(None)
+        }
+    }
+}
+
+#[tauri::command]
+pub fn close_project(state: State<'_, AppState>) -> Result<(), String> {
+    clear_current_path(&state).map_err(|error| error.to_string())
 }
 
 #[tauri::command]

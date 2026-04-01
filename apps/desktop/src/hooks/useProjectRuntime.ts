@@ -38,6 +38,16 @@ export function useProjectRuntime() {
     return snapshot;
   }
 
+  async function restoreLastProject() {
+    const snapshot = await tauriApi.restoreLastProject();
+    if (!snapshot) {
+      return null;
+    }
+
+    resetUi();
+    return setSnapshot(snapshot);
+  }
+
   async function createProject(input: CreateProjectInput) {
     const snapshot = await tauriApi.createProject(input);
     resetUi();
@@ -125,9 +135,17 @@ export function useProjectRuntime() {
     enqueueAnalysis(event);
   }
 
+  async function closeProject() {
+    await tauriApi.closeProject();
+    queryClient.removeQueries({ queryKey: ["projectSnapshot"] });
+    resetUi();
+  }
+
   return {
+    restoreLastProject,
     createProject,
     openProject,
+    closeProject,
     refreshSnapshot,
     saveChapter,
     reorderChapters,

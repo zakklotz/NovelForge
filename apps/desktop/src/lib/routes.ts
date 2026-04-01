@@ -1,18 +1,28 @@
-export const DEFAULT_PROJECT_ROUTE = "/chapters";
-const PERSISTABLE_PROJECT_ROUTES = new Set([
+export const PERSISTABLE_PROJECT_ROUTES = [
   "/chapters",
   "/scenes",
   "/characters",
   "/suggestions",
   "/scratchpad",
-]);
+] as const;
 
-export function normalizeProjectRoute(route: string | null | undefined) {
-  return route && PERSISTABLE_PROJECT_ROUTES.has(route)
-    ? route
+export type PersistableProjectRoute =
+  (typeof PERSISTABLE_PROJECT_ROUTES)[number];
+
+export const DEFAULT_PROJECT_ROUTE: PersistableProjectRoute = "/chapters";
+
+const persistableProjectRouteSet = new Set<string>(PERSISTABLE_PROJECT_ROUTES);
+
+export function normalizeProjectRoute(
+  route: string | null | undefined,
+): PersistableProjectRoute {
+  return route && persistableProjectRouteSet.has(route)
+    ? (route as PersistableProjectRoute)
     : DEFAULT_PROJECT_ROUTE;
 }
 
-export function shouldPersistProjectRoute(route: string) {
-  return PERSISTABLE_PROJECT_ROUTES.has(route);
+export function shouldPersistProjectRoute(
+  route: string,
+): route is PersistableProjectRoute {
+  return persistableProjectRouteSet.has(route);
 }

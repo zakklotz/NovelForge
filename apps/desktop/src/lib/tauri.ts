@@ -35,6 +35,9 @@ export const tauriApi = {
     invoke<ProjectSnapshot>("create_project", { input }),
   openProject: (input: OpenProjectInput) =>
     invoke<ProjectSnapshot>("open_project", { input }),
+  restoreLastProject: () =>
+    invoke<ProjectSnapshot | null>("restore_last_project"),
+  closeProject: () => invoke<void>("close_project"),
   getProjectSnapshot: () =>
     invoke<ProjectSnapshot>("get_project_snapshot"),
   saveChapter: (input: SaveChapterInput) =>

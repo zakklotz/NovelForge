@@ -1,151 +1,285 @@
-import { useState } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
+import { listen } from "@tauri-apps/api/event";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import type { CreateProjectInput } from "@novelforge/domain";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { Button, EmptyState, Field, Input, Panel } from "@/components/ui";
 import { useUiStore } from "@/store/uiStore";
-import { formatRelativeTimestamp } from "@/lib/utils";
+import { normalizeProjectRoute } from "@/lib/routes";
 import { AppShell } from "./AppShell";
 import { SettingsView } from "@/features/settings/SettingsView";
 
-function ProjectSplash() {
-  const { createProject, openProject } = useProjectRuntime();
-  const [projectTitle, setProjectTitle] = useState("");
+const MENU_EVENT_NEW_PROJECT = "novelforge://new-project";
+const MENU_EVENT_OPEN_PROJECT = "novelforge://open-project";
+const MENU_EVENT_CLOSE_PROJECT = "novelforge://close-project";
+const MENU_EVENT_OPEN_SETTINGS = "novelforge://open-settings";
 
-  async function handleCreate() {
-    const normalizedTitle = projectTitle.trim() || "Untitled Novel";
-    const path = await save({
-      defaultPath: `${normalizedTitle.replace(/\s+/g, "-").toLowerCase()}.novelforge`,
-      filters: [{ name: "NovelForge Project", extensions: ["novelforge"] }],
-    });
-
-    if (!path) {
-      return;
-    }
-
-    const input: CreateProjectInput = {
-      title: normalizedTitle,
-      logline: "",
-      path,
-    };
-
-    await createProject(input);
-    setProjectTitle("");
-  }
-
-  async function handleOpen() {
-    const path = await open({
-      multiple: false,
-      filters: [
-        { name: "NovelForge Project", extensions: ["novelforge", "sqlite", "db"] },
-      ],
-    });
-
-    if (!path || Array.isArray(path)) {
-      return;
-    }
-
-    await openProject({ path });
-  }
-
+function StartupState({
+  projectTitle,
+  onProjectTitleChange,
+  onCreateProject,
+  onOpenProject,
+  isBusy,
+  isRestoring,
+  errorMessage,
+}: {
+  projectTitle: string;
+  onProjectTitleChange: (value: string) => void;
+  onCreateProject: () => Promise<void>;
+  onOpenProject: () => Promise<void>;
+  isBusy: boolean;
+  isRestoring: boolean;
+  errorMessage: string | null;
+}) {
   return (
-    <div className="flex min-h-screen items-center justify-center px-6 py-12">
-      <div className="grid w-full max-w-6xl gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="space-y-6 rounded-[2rem] border border-white/50 bg-[color:rgba(255,248,239,0.7)] p-10 shadow-[0_30px_80px_rgba(36,24,15,0.14)] backdrop-blur">
-          <span className="inline-flex rounded-full bg-[color:rgba(184,88,63,0.14)] px-3 py-1 text-xs font-semibold uppercase tracking-[0.24em] text-[var(--accent-strong)]">
-            Structured Novel Workshop
-          </span>
-          <div className="space-y-4">
-            <h1 className="max-w-2xl text-5xl font-semibold leading-tight text-[var(--ink)]">
-              Build a novel as a living system, not a pile of disconnected pages.
-            </h1>
-            <p className="max-w-2xl text-lg text-[var(--ink-muted)]">
-              Organize chapters and scenes, write in a context-rich workspace, and
-              surface revision warnings when structure or character logic shifts.
-            </p>
-          </div>
-          <div className="grid gap-4 md:grid-cols-3">
-            {[
-              ["Chapter maps", "Track purpose, emotional movement, and major events."],
-              ["Scene workspace", "Draft with chapter intent, character cards, and warnings in view."],
-              ["Continuity review", "Flag dependency and structure risks as the manuscript evolves."],
-            ].map(([title, text]) => (
-              <Panel key={title} className="bg-white/75">
-                <h2 className="text-base font-semibold text-[var(--ink)]">{title}</h2>
-                <p className="mt-2 text-sm text-[var(--ink-muted)]">{text}</p>
-              </Panel>
-            ))}
-          </div>
-        </div>
-
-        <Panel className="self-center">
+    <div className="mx-auto max-w-3xl">
+      <Panel>
+        {isRestoring ? (
+          <EmptyState
+            title="Checking for your last project"
+            description="NovelForge is looking for a valid last-opened workspace."
+          />
+        ) : (
           <div className="space-y-6">
             <div>
-              <h2 className="text-2xl font-semibold text-[var(--ink)]">
-                Start a new project
-              </h2>
+              <h2 className="text-2xl font-semibold text-[var(--ink)]">No project open</h2>
               <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                Create a portable local project file and begin structuring the novel.
+                Use File -&gt; New Project or File -&gt; Open Project to enter the
+                workspace. AI provider configuration stays in Settings, not in
+                the startup flow.
               </p>
             </div>
-            <Field label="Project Title">
+
+            <Field label="New Project Title">
               <Input
-                placeholder="Ashen Sky"
+                placeholder="Untitled Novel"
                 value={projectTitle}
-                onChange={(event) => setProjectTitle(event.target.value)}
+                onChange={(event) => onProjectTitleChange(event.target.value)}
               />
             </Field>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <Button onClick={handleCreate}>Create Project</Button>
-              <Button variant="secondary" onClick={handleOpen}>
-                Open Existing
+
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => onCreateProject()} disabled={isBusy}>
+                New Project
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={() => onOpenProject()}
+                disabled={isBusy}
+              >
+                Open Project
               </Button>
             </div>
-            <div className="pt-2 text-sm text-[var(--ink-muted)]">
-              Need to add Gemini, Groq, or OpenRouter keys first?{" "}
-              <Link
-                to="/settings"
-                className="font-semibold text-[var(--accent-strong)] underline"
-              >
-                Open AI Settings
-              </Link>
-            </div>
+
+            {errorMessage ? (
+              <Panel className="bg-[color:rgba(174,67,45,0.1)]">
+                <p className="text-sm text-[var(--danger)]">{errorMessage}</p>
+              </Panel>
+            ) : null}
           </div>
-        </Panel>
-      </div>
+        )}
+      </Panel>
     </div>
   );
 }
 
 export function ProjectGate({ children }: { children: React.ReactNode }) {
   const snapshotQuery = useProjectSnapshot();
+  const navigate = useNavigate();
   const currentProjectId = useUiStore((state) => state.currentProjectId);
   const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const { createProject, openProject, restoreLastProject, closeProject } =
+    useProjectRuntime();
+  const [projectTitle, setProjectTitle] = useState("");
+  const [isStartingProject, setIsStartingProject] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(true);
+  const [startupError, setStartupError] = useState<string | null>(null);
+  const hasAttemptedRestore = useRef(false);
+
+  const openWorkspace = useEffectEvent(async (route: string | null | undefined) => {
+    const targetRoute = normalizeProjectRoute(route);
+    await navigate({ to: targetRoute });
+  });
+
+  const handleCreateProject = useEffectEvent(async () => {
+    setIsStartingProject(true);
+    setStartupError(null);
+
+    try {
+      const normalizedTitle = projectTitle.trim() || "Untitled Novel";
+      const path = await save({
+        defaultPath: `${normalizedTitle.replace(/\s+/g, "-").toLowerCase()}.novelforge`,
+        filters: [{ name: "NovelForge Project", extensions: ["novelforge"] }],
+      });
+
+      if (!path) {
+        return;
+      }
+
+      const input: CreateProjectInput = {
+        title: normalizedTitle,
+        logline: "",
+        path,
+      };
+
+      const snapshot = await createProject(input);
+      setProjectTitle("");
+      await openWorkspace(snapshot.projectState.lastRoute);
+    } catch (error) {
+      setStartupError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not create the project.",
+      );
+    } finally {
+      setIsStartingProject(false);
+      setIsRestoring(false);
+    }
+  });
+
+  const handleOpenProject = useEffectEvent(async () => {
+    setIsStartingProject(true);
+    setStartupError(null);
+
+    try {
+      const path = await open({
+        multiple: false,
+        filters: [
+          { name: "NovelForge Project", extensions: ["novelforge", "sqlite", "db"] },
+        ],
+      });
+
+      if (!path || Array.isArray(path)) {
+        return;
+      }
+
+      const snapshot = await openProject({ path });
+      await openWorkspace(snapshot.projectState.lastRoute);
+    } catch (error) {
+      setStartupError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not open that project file.",
+      );
+    } finally {
+      setIsStartingProject(false);
+      setIsRestoring(false);
+    }
+  });
+
+  const handleCloseProject = useEffectEvent(async () => {
+    await closeProject();
+    setStartupError(null);
+    await navigate({ to: "/" });
+  });
+
+  const handleOpenSettings = useEffectEvent(async () => {
+    await navigate({ to: "/settings" });
+  });
+
+  useEffect(() => {
+    if (hasAttemptedRestore.current || currentProjectId) {
+      setIsRestoring(false);
+      return;
+    }
+
+    hasAttemptedRestore.current = true;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const snapshot = await restoreLastProject();
+        if (cancelled || !snapshot) {
+          return;
+        }
+        await openWorkspace(snapshot.projectState.lastRoute);
+      } finally {
+        if (!cancelled) {
+          setIsRestoring(false);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentProjectId, openWorkspace, restoreLastProject]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !("__TAURI_EVENT_PLUGIN_INTERNALS__" in window)) {
+      return;
+    }
+
+    let unlistenFns: Array<() => void> = [];
+    let disposed = false;
+
+    void Promise.all([
+      listen(MENU_EVENT_NEW_PROJECT, () => {
+        void handleCreateProject();
+      }),
+      listen(MENU_EVENT_OPEN_PROJECT, () => {
+        void handleOpenProject();
+      }),
+      listen(MENU_EVENT_CLOSE_PROJECT, () => {
+        void handleCloseProject();
+      }),
+      listen(MENU_EVENT_OPEN_SETTINGS, () => {
+        void handleOpenSettings();
+      }),
+    ]).then((listeners) => {
+      if (disposed) {
+        listeners.forEach((unlisten) => unlisten());
+        return;
+      }
+      unlistenFns = listeners;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenFns.forEach((unlisten) => unlisten());
+    };
+  }, [
+    handleCloseProject,
+    handleCreateProject,
+    handleOpenProject,
+    handleOpenSettings,
+  ]);
+
+  useEffect(() => {
+    if (!snapshotQuery.data || pathname !== "/") {
+      return;
+    }
+
+    void openWorkspace(snapshotQuery.data.projectState.lastRoute);
+  }, [openWorkspace, pathname, snapshotQuery.data]);
+
+  let content = children;
 
   if (!currentProjectId) {
-    if (pathname === "/settings") {
-      return <SettingsView standalone />;
-    }
-    return <ProjectSplash />;
-  }
-
-  if (snapshotQuery.isLoading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
+    content =
+      pathname === "/settings" ? (
+        <SettingsView />
+      ) : (
+        <EmptyState
+          title="No project loaded"
+          description="Open or create a project to start structuring the novel."
+        />
+      );
+  } else if (snapshotQuery.isLoading && !snapshotQuery.data) {
+    content = (
+      <Panel>
         <EmptyState
           title="Opening project"
           description="Loading chapters, scenes, and character context."
         />
-      </div>
+      </Panel>
     );
-  }
-
-  if (snapshotQuery.isError || !snapshotQuery.data) {
-    return (
-      <div className="flex min-h-screen items-center justify-center px-6">
-        <Panel className="max-w-xl">
+  } else if (snapshotQuery.isError || !snapshotQuery.data) {
+    content = (
+      <Panel className="mx-auto max-w-xl">
+        <div className="space-y-4">
           <h2 className="text-xl font-semibold text-[var(--ink)]">
             Project could not be opened
           </h2>
@@ -154,13 +288,34 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
               ? snapshotQuery.error.message
               : "NovelForge hit an unexpected error while loading the current project."}
           </p>
-          <p className="mt-4 text-xs uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-            Last attempted load {formatRelativeTimestamp(new Date().toISOString())}
-          </p>
-        </Panel>
-      </div>
+          <div className="flex flex-wrap gap-3">
+            <Button variant="secondary" onClick={() => void handleOpenProject()}>
+              Open Another Project
+            </Button>
+            <Button variant="ghost" onClick={() => void handleCloseProject()}>
+              Back To Startup
+            </Button>
+          </div>
+        </div>
+      </Panel>
     );
   }
 
-  return <AppShell snapshot={snapshotQuery.data}>{children}</AppShell>;
+  return (
+    <AppShell snapshot={snapshotQuery.data ?? null}>
+      {!currentProjectId && pathname !== "/settings" ? (
+        <StartupState
+          projectTitle={projectTitle}
+          onProjectTitleChange={setProjectTitle}
+          onCreateProject={handleCreateProject}
+          onOpenProject={handleOpenProject}
+          isBusy={isStartingProject}
+          isRestoring={isRestoring}
+          errorMessage={startupError}
+        />
+      ) : (
+        content
+      )}
+    </AppShell>
+  );
 }

@@ -527,8 +527,23 @@ fn normalize_lookup_key(value: &str) -> String {
     value.trim().to_lowercase()
 }
 
-fn scene_bucket_key(chapter_id: Option<&str>) -> String {
-    chapter_id.unwrap_or("__unassigned__").to_string()
+fn scene_count_in_bucket(
+    transaction: &Transaction<'_>,
+    chapter_id: Option<&str>,
+    excluded_scene_id: Option<&str>,
+) -> Result<i64> {
+    let excluded_scene_id = excluded_scene_id.unwrap_or("");
+    transaction
+        .query_row(
+            "SELECT COUNT(*) FROM scenes WHERE ((chapter_id IS NULL AND ?1 IS NULL) OR chapter_id = ?1) AND (?2 = '' OR id != ?2)",
+            params![chapter_id, excluded_scene_id],
+            |row| row.get(0),
+        )
+        .context("Failed to count scenes in bucket.")
+}
+
+fn next_scene_order_index(transaction: &Transaction<'_>, chapter_id: Option<&str>) -> Result<i64> {
+    scene_count_in_bucket(transaction, chapter_id, None)
 }
 
 fn remember_lookup_entry(
@@ -574,14 +589,87 @@ fn build_scene_lookup(snapshot: &ProjectSnapshot) -> HashMap<String, String> {
     lookup
 }
 
-fn next_order_index_by_scene_bucket(snapshot: &ProjectSnapshot) -> HashMap<String, i64> {
-    let mut indices = HashMap::new();
-    for scene in &snapshot.scenes {
-        let key = scene_bucket_key(scene.chapter_id.as_deref());
-        let next_index = indices.entry(key).or_insert(0);
-        *next_index = (*next_index).max(scene.order_index + 1);
+fn load_scene_position(
+    transaction: &Transaction<'_>,
+    scene_id: &str,
+) -> Result<(Option<String>, i64)> {
+    transaction
+        .query_row(
+            "SELECT chapter_id, order_index FROM scenes WHERE id = ?1",
+            params![scene_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .context("Scene not found.")
+}
+
+fn close_scene_gap(
+    transaction: &Transaction<'_>,
+    scene_id: &str,
+    chapter_id: Option<&str>,
+    removed_order_index: i64,
+) -> Result<()> {
+    transaction.execute(
+        "UPDATE scenes SET order_index = order_index - 1, updated_at = ?1 WHERE id != ?2 AND ((chapter_id IS NULL AND ?3 IS NULL) OR chapter_id = ?3) AND order_index > ?4",
+        params![now_iso(), scene_id, chapter_id, removed_order_index],
+    )?;
+    Ok(())
+}
+
+fn make_room_for_scene(
+    transaction: &Transaction<'_>,
+    scene_id: &str,
+    chapter_id: Option<&str>,
+    target_index: i64,
+) -> Result<()> {
+    transaction.execute(
+        "UPDATE scenes SET order_index = order_index + 1, updated_at = ?1 WHERE id != ?2 AND ((chapter_id IS NULL AND ?3 IS NULL) OR chapter_id = ?3) AND order_index >= ?4",
+        params![now_iso(), scene_id, chapter_id, target_index],
+    )?;
+    Ok(())
+}
+
+fn move_scene_within_transaction(
+    transaction: &Transaction<'_>,
+    scene_id: &str,
+    target_chapter_id: Option<String>,
+    requested_target_index: i64,
+) -> Result<i64> {
+    let (current_chapter_id, current_order_index) = load_scene_position(transaction, scene_id)?;
+    let max_target_index = scene_count_in_bucket(
+        transaction,
+        target_chapter_id.as_deref(),
+        Some(scene_id),
+    )?;
+    let mut target_index = requested_target_index.clamp(0, max_target_index);
+
+    if current_chapter_id == target_chapter_id && target_index > current_order_index {
+        target_index -= 1;
     }
-    indices
+
+    close_scene_gap(
+        transaction,
+        scene_id,
+        current_chapter_id.as_deref(),
+        current_order_index,
+    )?;
+    make_room_for_scene(
+        transaction,
+        scene_id,
+        target_chapter_id.as_deref(),
+        target_index,
+    )?;
+
+    transaction.execute(
+        "UPDATE scenes SET chapter_id = ?1, order_index = ?2, updated_at = ?3 WHERE id = ?4",
+        params![
+            optional_string(target_chapter_id.clone()),
+            target_index,
+            now_iso(),
+            scene_id
+        ],
+    )?;
+
+    Ok(target_index)
 }
 
 fn resolve_character_ids(values: &[String], character_lookup: &HashMap<String, String>) -> Vec<String> {
@@ -673,7 +761,6 @@ pub fn apply_scratchpad_result(
         .max()
         .unwrap_or(-1)
         + 1;
-    let mut next_scene_orders = next_order_index_by_scene_bucket(&snapshot);
     let timestamp = now_iso();
     let mut applied = Vec::new();
     let mut events = Vec::new();
@@ -897,18 +984,24 @@ pub fn apply_scratchpad_result(
             &chapter_lookup,
             existing_scene.and_then(|scene| scene.chapter_id.clone()),
         );
-        let scene_bucket = scene_bucket_key(target_chapter_id.as_deref());
-        let order_index = existing_scene
+        let mut order_index = existing_scene
             .map(|scene| scene.order_index)
-            .unwrap_or_else(|| {
-                let next_index = next_scene_orders.entry(scene_bucket).or_insert(0);
-                let order = *next_index;
-                *next_index += 1;
-                order
-            });
+            .unwrap_or_else(|| next_scene_order_index(&transaction, target_chapter_id.as_deref()).unwrap_or(0));
+        let chapter_changed = existing_scene
+            .map(|scene| scene.chapter_id != target_chapter_id)
+            .unwrap_or(false);
         let created_at = existing_scene
             .map(|scene| scene.created_at.clone())
             .unwrap_or_else(|| timestamp.clone());
+
+        if existing_scene.is_none() {
+            order_index = next_scene_order_index(&transaction, target_chapter_id.as_deref())?;
+        }
+
+        if chapter_changed {
+            order_index = scene_count_in_bucket(&transaction, target_chapter_id.as_deref(), None)?;
+        }
+
         let save_input = SaveSceneInput {
             id: scene_id.clone(),
             project_id: input.project_id.clone(),
@@ -978,6 +1071,10 @@ pub fn apply_scratchpad_result(
             ],
         )?;
         upsert_scene_relations(&transaction, &save_input)?;
+
+        if chapter_changed {
+            move_scene_within_transaction(&transaction, &scene_id, target_chapter_id.clone(), i64::MAX)?;
+        }
 
         remember_lookup_entry(&mut scene_lookup, &scene_id, &proposal.title);
         applied.push(DomainObjectRef {
@@ -1112,8 +1209,14 @@ pub fn save_scene(path: &Path, input: SaveSceneInput) -> Result<Scene> {
         )
         .optional()?;
 
+    let is_new_scene = existing_created_at.is_none();
     let created_at = existing_created_at.unwrap_or_else(now_iso);
     let updated_at = now_iso();
+    let order_index = if is_new_scene {
+        next_scene_order_index(&transaction, input.chapter_id.as_deref())?
+    } else {
+        input.order_index
+    };
 
     transaction.execute(
         r#"
@@ -1140,7 +1243,7 @@ pub fn save_scene(path: &Path, input: SaveSceneInput) -> Result<Scene> {
             input.id,
             input.project_id,
             optional_string(input.chapter_id.clone()),
-            input.order_index,
+            order_index,
             input.title,
             input.summary,
             input.purpose,
@@ -1169,39 +1272,11 @@ pub fn save_scene(path: &Path, input: SaveSceneInput) -> Result<Scene> {
 pub fn move_scene(path: &Path, input: MoveSceneInput) -> Result<Scene> {
     let mut connection = open_connection(path)?;
     let transaction = connection.transaction()?;
-
-    let (current_chapter_id, current_order_index): (Option<String>, i64) = transaction
-        .query_row(
-            "SELECT chapter_id, order_index FROM scenes WHERE id = ?1",
-            params![input.scene_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .context("Scene not found.")?;
-
-    let mut target_index = input.target_index;
-
-    if current_chapter_id == input.target_chapter_id && target_index > current_order_index {
-        target_index -= 1;
-    }
-
-    transaction.execute(
-        "UPDATE scenes SET order_index = order_index - 1, updated_at = ?1 WHERE id != ?2 AND ((chapter_id IS NULL AND ?3 IS NULL) OR chapter_id = ?3) AND order_index > ?4",
-        params![now_iso(), input.scene_id, current_chapter_id, current_order_index],
-    )?;
-
-    transaction.execute(
-        "UPDATE scenes SET order_index = order_index + 1, updated_at = ?1 WHERE id != ?2 AND ((chapter_id IS NULL AND ?3 IS NULL) OR chapter_id = ?3) AND order_index >= ?4",
-        params![now_iso(), input.scene_id, input.target_chapter_id, target_index],
-    )?;
-
-    transaction.execute(
-        "UPDATE scenes SET chapter_id = ?1, order_index = ?2, updated_at = ?3 WHERE id = ?4",
-        params![
-            optional_string(input.target_chapter_id.clone()),
-            target_index,
-            now_iso(),
-            input.scene_id
-        ],
+    move_scene_within_transaction(
+        &transaction,
+        &input.scene_id,
+        input.target_chapter_id.clone(),
+        input.target_index,
     )?;
 
     transaction.commit()?;
@@ -1575,6 +1650,108 @@ mod tests {
         assert_eq!(refreshed.scenes.len(), 1);
         assert_eq!(refreshed.characters.len(), 1);
         assert_eq!(refreshed.scenes[0].chapter_id, Some(refreshed.chapters[0].id.clone()));
+
+        cleanup_db_files(&temp_path);
+        Ok(())
+    }
+
+    #[test]
+    fn save_scene_appends_new_scene_to_the_end_of_its_chapter() -> Result<()> {
+        let temp_path = std::env::temp_dir().join(format!(
+            "novelforge-scene-order-{}.novelforge",
+            Uuid::new_v4()
+        ));
+        cleanup_db_files(&temp_path);
+
+        let (_, snapshot) = create_project(CreateProjectInput {
+            title: "Scene Order Test".to_string(),
+            logline: "Verify new scenes append in chapter order.".to_string(),
+            path: temp_path.to_string_lossy().into_owned(),
+        })?;
+
+        let chapter = save_chapter(
+            &temp_path,
+            SaveChapterInput {
+                id: "chapter-1".to_string(),
+                project_id: snapshot.project.id.clone(),
+                title: "Chapter 1".to_string(),
+                summary: String::new(),
+                purpose: String::new(),
+                major_events: vec![],
+                emotional_movement: String::new(),
+                character_focus_ids: vec![],
+                setup_payoff_notes: String::new(),
+                order_index: 0,
+            },
+        )?;
+
+        save_scene(
+            &temp_path,
+            SaveSceneInput {
+                id: "scene-1".to_string(),
+                project_id: snapshot.project.id.clone(),
+                chapter_id: Some(chapter.id.clone()),
+                order_index: 0,
+                title: "Scene 1".to_string(),
+                summary: String::new(),
+                purpose: String::new(),
+                conflict: String::new(),
+                outcome: String::new(),
+                pov_character_id: None,
+                location: String::new(),
+                time_label: String::new(),
+                involved_character_ids: vec![],
+                continuity_tags: vec![],
+                dependency_scene_ids: vec![],
+                manuscript_text: "<p></p>".to_string(),
+            },
+        )?;
+
+        save_scene(
+            &temp_path,
+            SaveSceneInput {
+                id: "scene-2".to_string(),
+                project_id: snapshot.project.id.clone(),
+                chapter_id: Some(chapter.id.clone()),
+                order_index: 0,
+                title: "Scene 2".to_string(),
+                summary: String::new(),
+                purpose: String::new(),
+                conflict: String::new(),
+                outcome: String::new(),
+                pov_character_id: None,
+                location: String::new(),
+                time_label: String::new(),
+                involved_character_ids: vec![],
+                continuity_tags: vec![],
+                dependency_scene_ids: vec![],
+                manuscript_text: "<p></p>".to_string(),
+            },
+        )?;
+
+        let appended_scene = save_scene(
+            &temp_path,
+            SaveSceneInput {
+                id: "scene-3".to_string(),
+                project_id: snapshot.project.id.clone(),
+                chapter_id: Some(chapter.id),
+                order_index: 0,
+                title: "Scene 3".to_string(),
+                summary: String::new(),
+                purpose: String::new(),
+                conflict: String::new(),
+                outcome: String::new(),
+                pov_character_id: None,
+                location: String::new(),
+                time_label: String::new(),
+                involved_character_ids: vec![],
+                continuity_tags: vec![],
+                dependency_scene_ids: vec![],
+                manuscript_text: "<p></p>".to_string(),
+            },
+        )?;
+
+        assert_eq!(appended_scene.order_index, 2);
 
         cleanup_db_files(&temp_path);
         Ok(())

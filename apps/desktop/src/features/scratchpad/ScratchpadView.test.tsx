@@ -19,6 +19,8 @@ vi.mock("@/lib/tauri", () => ({
   tauriApi: {
     createProject: vi.fn(),
     openProject: vi.fn(),
+    restoreLastProject: vi.fn(),
+    closeProject: vi.fn(),
     getProjectSnapshot: tauriApiMock.getProjectSnapshot,
     saveChapter: vi.fn(),
     reorderChapters: vi.fn(),

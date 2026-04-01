@@ -8,6 +8,8 @@ import { AppRouter } from "@/router";
 import { useUiStore } from "@/store/uiStore";
 
 const tauriApiMock = vi.hoisted(() => ({
+  restoreLastProject: vi.fn(),
+  closeProject: vi.fn(),
   getProjectSnapshot: vi.fn(),
   syncSuggestions: vi.fn(),
   saveProjectState: vi.fn(),
@@ -23,6 +25,8 @@ vi.mock("@/lib/tauri", () => ({
   tauriApi: {
     createProject: vi.fn(),
     openProject: vi.fn(),
+    restoreLastProject: tauriApiMock.restoreLastProject,
+    closeProject: tauriApiMock.closeProject,
     getProjectSnapshot: tauriApiMock.getProjectSnapshot,
     saveChapter: vi.fn(),
     reorderChapters: vi.fn(),
@@ -53,6 +57,8 @@ class MockWorker {
 
 describe("AppRouter loaded project flow", () => {
   beforeEach(() => {
+    tauriApiMock.restoreLastProject.mockResolvedValue(null);
+    tauriApiMock.closeProject.mockResolvedValue(undefined);
     tauriApiMock.getProjectSnapshot.mockResolvedValue(sampleProjectSnapshot);
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
     tauriApiMock.saveProjectState.mockResolvedValue(sampleProjectSnapshot.projectState);
@@ -83,7 +89,7 @@ describe("AppRouter loaded project flow", () => {
       },
     });
 
-    render(
+    const { unmount } = render(
       <QueryClientProvider client={queryClient}>
         <AppRouter />
       </QueryClientProvider>,
@@ -92,5 +98,41 @@ describe("AppRouter loaded project flow", () => {
     await waitFor(() => {
       expect(screen.getAllByText("Chapters").length).toBeGreaterThan(0);
     });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("restores the last valid project on launch", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/scenes" as const,
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <QueryClientProvider client={queryClient}>
+        <AppRouter />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Scenes").length).toBeGreaterThan(0);
+    });
+
+    unmount();
+    queryClient.clear();
   });
 });
