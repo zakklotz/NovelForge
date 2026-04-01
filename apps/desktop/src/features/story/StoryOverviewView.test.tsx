@@ -1262,6 +1262,162 @@ describe("StoryOverviewView", () => {
     queryClient.clear();
   });
 
+  it("reorders a chapter scene later within the same chapter through the backend move command", async () => {
+    const secondChapterOneScene = currentSnapshot.scenes.find(
+      (scene) => scene.id === "scene-2",
+    );
+    if (!secondChapterOneScene) {
+      throw new Error("Expected second chapter-1 scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...secondChapterOneScene,
+          id: "scene-1b",
+          orderIndex: 2,
+          title: "Signal Ledger",
+          summary: "A third chapter scene gives Story Spine a visible same-chapter reorder target.",
+          purpose: "Hold the chapter open a little longer.",
+          dependencySceneIds: ["scene-2"],
+        },
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange later in chapter 1: the wrong package/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1",
+      targetChapterId: "chapter-1",
+      targetIndex: 2,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("reorders a chapter scene earlier within the same chapter through the backend move command", async () => {
+    const secondChapterOneScene = currentSnapshot.scenes.find(
+      (scene) => scene.id === "scene-2",
+    );
+    if (!secondChapterOneScene) {
+      throw new Error("Expected second chapter-1 scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...secondChapterOneScene,
+          id: "scene-1b",
+          orderIndex: 2,
+          title: "Signal Ledger",
+          summary: "A third chapter scene gives Story Spine a visible same-chapter reorder target.",
+          purpose: "Hold the chapter open a little longer.",
+          dependencySceneIds: ["scene-2"],
+        },
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move signal ledger earlier in chapter 1: the wrong package/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-1b",
+      targetChapterId: "chapter-1",
+      targetIndex: 1,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps unsaved story brief edits in place when reordering a chapter scene refreshes the snapshot", async () => {
+    const secondChapterOneScene = currentSnapshot.scenes.find(
+      (scene) => scene.id === "scene-2",
+    );
+    if (!secondChapterOneScene) {
+      throw new Error("Expected second chapter-1 scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...secondChapterOneScene,
+          id: "scene-1b",
+          orderIndex: 2,
+          title: "Signal Ledger",
+          summary: "A third chapter scene gives Story Spine a visible same-chapter reorder target.",
+          purpose: "Hold the chapter open a little longer.",
+          dependencySceneIds: ["scene-2"],
+        },
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Brief")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/^Premise/), {
+      target: {
+        value: "A courier reorders one chapter scene while the top-level brief keeps changing.",
+      },
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /move dock nine exchange later in chapter 1: the wrong package/i,
+      }),
+    );
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect((screen.getByLabelText(/^Premise/) as HTMLTextAreaElement).value).toBe(
+      "A courier reorders one chapter scene while the top-level brief keeps changing.",
+    );
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("moves a chapter scene into another chapter end by default through the backend move command", async () => {
     const { queryClient, unmount } = renderRouter();
 
@@ -1435,7 +1591,7 @@ describe("StoryOverviewView", () => {
       name: /move dock nine exchange to another chapter or unassigned/i,
     });
     const sceneCard = moveButton.closest("div.rounded-2xl");
-    if (!sceneCard) {
+    if (!(sceneCard instanceof HTMLElement)) {
       throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
     }
 

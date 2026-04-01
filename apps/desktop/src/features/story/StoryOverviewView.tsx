@@ -1053,6 +1053,55 @@ export function StoryOverviewView() {
     }
   }
 
+  async function handleReorderChapterScene(
+    sceneId: string,
+    chapterId: string,
+    direction: "earlier" | "later",
+  ) {
+    const currentChapterScenes = getOrderedScenesInBucket(
+      currentSnapshot.scenes,
+      chapterId,
+    );
+    const currentIndex = currentChapterScenes.findIndex(
+      (scene) => scene.id === sceneId,
+    );
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const desiredIndex =
+      direction === "earlier" ? currentIndex - 1 : currentIndex + 1;
+    if (desiredIndex < 0 || desiredIndex >= currentChapterScenes.length) {
+      return;
+    }
+
+    // Same-chapter downward moves are modeled as insert-after positions in the backend.
+    const targetIndex = direction === "later" ? desiredIndex + 1 : desiredIndex;
+
+    setActionError(null);
+    setStoryDiagnosticError(null);
+    setStoryDiagnosticResponse(null);
+    setChapterSceneMoveDraft(null);
+    setMovingChapterSceneId(sceneId);
+
+    try {
+      await moveScene({
+        projectId: currentSnapshot.project.id,
+        sceneId,
+        targetChapterId: chapterId,
+        targetIndex,
+      });
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not reorder this scene within the chapter.",
+      );
+    } finally {
+      setMovingChapterSceneId(null);
+    }
+  }
+
   function handleStartChapterSceneMove(sceneId: string, sourceChapterId: string) {
     const fallbackChapterId =
       orderedChapters.find((chapter) => chapter.id !== sourceChapterId)?.id ?? null;
@@ -1966,15 +2015,21 @@ export function StoryOverviewView() {
                           Scene Path
                         </p>
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
-                          Open any scene workspace directly from the chapter flow, or
-                          move a scene into another chapter or back to Unassigned
-                          without leaving Story Spine.
+                          Reorder scenes here, open any scene workspace directly from
+                          the chapter flow, or move a scene into another chapter or
+                          back to Unassigned without leaving Story Spine.
                         </p>
                       </div>
 
                       {scenes.length > 0 ? (
                         <div className="grid gap-2">
                           {scenes.map((scene) => {
+                            const currentSceneIndex = scenes.findIndex(
+                              (candidate) => candidate.id === scene.id,
+                            );
+                            const isFirstChapterScene = currentSceneIndex === 0;
+                            const isLastChapterScene =
+                              currentSceneIndex === scenes.length - 1;
                             const isMovingChapterScene =
                               chapterSceneMoveDraft?.sceneId === scene.id;
                             const targetChapterScenes = isMovingChapterScene
@@ -2008,6 +2063,40 @@ export function StoryOverviewView() {
                                   </div>
 
                                   <div className="flex shrink-0 flex-wrap items-center gap-2">
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      className="px-3 py-2"
+                                      onClick={() =>
+                                        void handleReorderChapterScene(
+                                          scene.id,
+                                          chapter.id,
+                                          "earlier",
+                                        )
+                                      }
+                                      disabled={isMutatingStructure || isFirstChapterScene}
+                                      aria-label={`Move ${scene.title} earlier in ${chapter.title}`}
+                                    >
+                                      <ArrowUp className="size-4" />
+                                      Earlier
+                                    </Button>
+                                    <Button
+                                      type="button"
+                                      variant="ghost"
+                                      className="px-3 py-2"
+                                      onClick={() =>
+                                        void handleReorderChapterScene(
+                                          scene.id,
+                                          chapter.id,
+                                          "later",
+                                        )
+                                      }
+                                      disabled={isMutatingStructure || isLastChapterScene}
+                                      aria-label={`Move ${scene.title} later in ${chapter.title}`}
+                                    >
+                                      <ArrowDown className="size-4" />
+                                      Later
+                                    </Button>
                                     <Button
                                       type="button"
                                       variant="ghost"
