@@ -8,9 +8,16 @@ import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { createId } from "@/lib/ids";
 import { useUiStore } from "@/store/uiStore";
 
-interface StructuralWarning {
+type DiagnosticTone = "default" | "accent" | "warning" | "danger";
+
+interface DiagnosticBadge {
   label: string;
-  tone: "warning" | "danger";
+  tone: DiagnosticTone;
+}
+
+interface ChapterDiagnosticSummary {
+  badges: DiagnosticBadge[];
+  notes: string[];
 }
 
 function buildOrderedChapters(snapshot: ProjectSnapshot) {
@@ -34,8 +41,8 @@ function buildChapterSceneMap(snapshot: ProjectSnapshot) {
   return chapterScenes;
 }
 
-function getChapterStructuralWarnings(chapter: Chapter, sceneCount: number): StructuralWarning[] {
-  const warnings: StructuralWarning[] = [];
+function getChapterStructuralWarnings(chapter: Chapter, sceneCount: number): DiagnosticBadge[] {
+  const warnings: DiagnosticBadge[] = [];
 
   if (!chapter.purpose.trim()) {
     warnings.push({ label: "No purpose", tone: "warning" });
@@ -50,6 +57,103 @@ function getChapterStructuralWarnings(chapter: Chapter, sceneCount: number): Str
   }
 
   return warnings;
+}
+
+function countMissingScenePlanningFields(scenes: Scene[]) {
+  return scenes.reduce(
+    (counts, scene) => {
+      if (!scene.summary.trim()) {
+        counts.missingSummaryCount += 1;
+      }
+
+      if (!scene.purpose.trim()) {
+        counts.missingPurposeCount += 1;
+      }
+
+      return counts;
+    },
+    {
+      missingSummaryCount: 0,
+      missingPurposeCount: 0,
+    },
+  );
+}
+
+function getTypicalMappedChapterSceneCount(
+  chapters: Chapter[],
+  chapterScenes: Record<string, Scene[]>,
+) {
+  const mappedSceneCounts = chapters
+    .map((chapter) => chapterScenes[chapter.id]?.length ?? 0)
+    .filter((sceneCount) => sceneCount > 0)
+    .sort((left, right) => left - right);
+
+  if (mappedSceneCounts.length < 3) {
+    return null;
+  }
+
+  const middleIndex = Math.floor(mappedSceneCounts.length / 2);
+  if (mappedSceneCounts.length % 2 === 1) {
+    return mappedSceneCounts[middleIndex];
+  }
+
+  return Math.round(
+    (mappedSceneCounts[middleIndex - 1] + mappedSceneCounts[middleIndex]) / 2,
+  );
+}
+
+function buildChapterDiagnosticSummary(
+  chapter: Chapter,
+  scenes: Scene[],
+  typicalMappedChapterSceneCount: number | null,
+): ChapterDiagnosticSummary {
+  const badges = getChapterStructuralWarnings(chapter, scenes.length);
+  const notes: string[] = [];
+  const { missingSummaryCount, missingPurposeCount } = countMissingScenePlanningFields(scenes);
+
+  if (typicalMappedChapterSceneCount !== null && scenes.length > 0) {
+    if (scenes.length <= Math.max(1, typicalMappedChapterSceneCount - 2)) {
+      badges.push({
+        label: "Sparse for current spine",
+        tone: "default",
+      });
+      notes.push(
+        `${scenes.length} scene${scenes.length === 1 ? "" : "s"} here while the current spine usually lands around ${typicalMappedChapterSceneCount}.`,
+      );
+    } else if (scenes.length >= typicalMappedChapterSceneCount + 2) {
+      badges.push({
+        label: "Dense for current spine",
+        tone: "default",
+      });
+      notes.push(
+        `${scenes.length} scenes here while the current spine usually lands around ${typicalMappedChapterSceneCount}.`,
+      );
+    }
+  }
+
+  if (missingSummaryCount > 0 || missingPurposeCount > 0) {
+    badges.push({
+      label: "Scene planning gaps",
+      tone: "warning",
+    });
+  }
+
+  if (missingSummaryCount > 0) {
+    notes.push(
+      `${missingSummaryCount} scene${missingSummaryCount === 1 ? "" : "s"} missing summary.`,
+    );
+  }
+
+  if (missingPurposeCount > 0) {
+    notes.push(
+      `${missingPurposeCount} scene${missingPurposeCount === 1 ? "" : "s"} missing purpose.`,
+    );
+  }
+
+  return {
+    badges,
+    notes,
+  };
 }
 
 function buildChapterSearchText(chapter: Chapter, scenes: Scene[]) {
@@ -110,6 +214,10 @@ export function StoryOverviewView() {
   const currentSnapshot = snapshot;
   const orderedChapters = buildOrderedChapters(currentSnapshot);
   const chapterScenes = buildChapterSceneMap(currentSnapshot);
+  const typicalMappedChapterSceneCount = getTypicalMappedChapterSceneCount(
+    orderedChapters,
+    chapterScenes,
+  );
   const chapterOrderIndex = new Map(
     orderedChapters.map((chapter, index) => [chapter.id, index]),
   );
@@ -127,7 +235,12 @@ export function StoryOverviewView() {
   const unassignedSceneCount =
     currentSnapshot.scenes.filter((scene) => scene.chapterId === null).length;
   const chaptersNeedingAttentionCount = orderedChapters.filter((chapter) => {
-    return getChapterStructuralWarnings(chapter, chapterScenes[chapter.id]?.length ?? 0).length > 0;
+    const chapterDiagnosticSummary = buildChapterDiagnosticSummary(
+      chapter,
+      chapterScenes[chapter.id] ?? [],
+      typicalMappedChapterSceneCount,
+    );
+    return chapterDiagnosticSummary.badges.length > 0;
   }).length;
   const isMutatingStructure = isAddingChapter || movingChapterId !== null;
 
@@ -242,7 +355,7 @@ export function StoryOverviewView() {
             {chaptersNeedingAttentionCount}
           </p>
           <p className="mt-1 text-sm text-[var(--ink-muted)]">
-            Missing purpose, summary, or scene coverage.
+            Balance outliers or planning gaps worth a quick pass.
           </p>
         </div>
       </div>
@@ -291,7 +404,11 @@ export function StoryOverviewView() {
         ) : (
           filteredChapters.map((chapter) => {
             const scenes = chapterScenes[chapter.id] ?? [];
-            const warnings = getChapterStructuralWarnings(chapter, scenes.length);
+            const chapterDiagnosticSummary = buildChapterDiagnosticSummary(
+              chapter,
+              scenes,
+              typicalMappedChapterSceneCount,
+            );
             const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
             const isFirstChapter = currentChapterIndex === 0;
             const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
@@ -315,9 +432,9 @@ export function StoryOverviewView() {
                       <Badge tone="accent">
                         {scenes.length} scene{scenes.length === 1 ? "" : "s"}
                       </Badge>
-                      {warnings.map((warning) => (
-                        <Badge key={`${chapter.id}-${warning.label}`} tone={warning.tone}>
-                          {warning.label}
+                      {chapterDiagnosticSummary.badges.map((badge) => (
+                        <Badge key={`${chapter.id}-${badge.label}`} tone={badge.tone}>
+                          {badge.label}
                         </Badge>
                       ))}
                     </div>
@@ -379,6 +496,19 @@ export function StoryOverviewView() {
                         {chapter.summary || "No chapter summary captured yet."}
                       </p>
                     </div>
+
+                    {chapterDiagnosticSummary.notes.length > 0 ? (
+                      <div className="rounded-2xl border border-[color:rgba(232,191,114,0.28)] bg-[color:rgba(232,191,114,0.08)] px-4 py-4">
+                        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--warning)]">
+                          Structure Signals
+                        </p>
+                        <div className="mt-2 grid gap-2 text-sm leading-6 text-[var(--ink-muted)]">
+                          {chapterDiagnosticSummary.notes.map((note) => (
+                            <p key={`${chapter.id}-${note}`}>{note}</p>
+                          ))}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
 
                   <div className="grid gap-2">

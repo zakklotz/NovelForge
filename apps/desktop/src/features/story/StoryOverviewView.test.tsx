@@ -60,6 +60,34 @@ class MockWorker {
   terminate() {}
 }
 
+function createChapter(id: string, title: string, orderIndex: number) {
+  return {
+    ...sampleProjectSnapshot.chapters[0],
+    id,
+    title,
+    orderIndex,
+    summary: `${title} summary`,
+    purpose: `${title} purpose`,
+  };
+}
+
+function createScene(
+  id: string,
+  chapterId: string,
+  orderIndex: number,
+  title: string,
+) {
+  return {
+    ...sampleProjectSnapshot.scenes[0],
+    id,
+    chapterId,
+    orderIndex,
+    title,
+    summary: `${title} summary`,
+    purpose: `${title} purpose`,
+  };
+}
+
 function reorderChaptersInSnapshot(
   snapshot: typeof sampleProjectSnapshot,
   chapterIds: string[],
@@ -102,8 +130,8 @@ describe("StoryOverviewView", () => {
     });
     tauriApiMock.reorderChapters.mockImplementation(
       async (_projectId: string, chapterIds: string[]) => {
-      currentSnapshot = reorderChaptersInSnapshot(currentSnapshot, chapterIds);
-      return currentSnapshot.chapters;
+        currentSnapshot = reorderChaptersInSnapshot(currentSnapshot, chapterIds);
+        return currentSnapshot.chapters;
       },
     );
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
@@ -254,6 +282,84 @@ describe("StoryOverviewView", () => {
     expect(within(secondChapterCard).getByText("No scenes")).toBeTruthy();
     expect(
       within(secondChapterCard).getByText("No scenes are assigned to this chapter yet."),
+    ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("shows scene planning gap diagnostics from chapter scene data", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: currentSnapshot.scenes.map((scene) =>
+        scene.id === "scene-2"
+          ? {
+              ...scene,
+              summary: "",
+              purpose: "",
+            }
+          : scene,
+      ),
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    const firstChapterCard = screen.getAllByRole("article")[0];
+    expect(within(firstChapterCard).getByText("Scene planning gaps")).toBeTruthy();
+    expect(within(firstChapterCard).getByText("1 scene missing summary.")).toBeTruthy();
+    expect(within(firstChapterCard).getByText("1 scene missing purpose.")).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("shows sparse and dense chapter load signals when the spine has enough mapped chapters", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      chapters: [
+        createChapter("chapter-a", "Chapter A", 0),
+        createChapter("chapter-b", "Chapter B", 1),
+        createChapter("chapter-c", "Chapter C", 2),
+        createChapter("chapter-d", "Chapter D", 3),
+      ],
+      scenes: [
+        createScene("scene-a1", "chapter-a", 0, "Scene A1"),
+        createScene("scene-b1", "chapter-b", 0, "Scene B1"),
+        createScene("scene-b2", "chapter-b", 1, "Scene B2"),
+        createScene("scene-b3", "chapter-b", 2, "Scene B3"),
+        createScene("scene-c1", "chapter-c", 0, "Scene C1"),
+        createScene("scene-c2", "chapter-c", 1, "Scene C2"),
+        createScene("scene-c3", "chapter-c", 2, "Scene C3"),
+        createScene("scene-d1", "chapter-d", 0, "Scene D1"),
+        createScene("scene-d2", "chapter-d", 1, "Scene D2"),
+        createScene("scene-d3", "chapter-d", 2, "Scene D3"),
+        createScene("scene-d4", "chapter-d", 3, "Scene D4"),
+        createScene("scene-d5", "chapter-d", 4, "Scene D5"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    const chapterCards = screen.getAllByRole("article");
+    expect(within(chapterCards[0]).getByText("Sparse for current spine")).toBeTruthy();
+    expect(
+      within(chapterCards[0]).getByText(
+        "1 scene here while the current spine usually lands around 3.",
+      ),
+    ).toBeTruthy();
+    expect(within(chapterCards[3]).getByText("Dense for current spine")).toBeTruthy();
+    expect(
+      within(chapterCards[3]).getByText(
+        "5 scenes here while the current spine usually lands around 3.",
+      ),
     ).toBeTruthy();
 
     unmount();
