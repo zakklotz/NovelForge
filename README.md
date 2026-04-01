@@ -2,6 +2,10 @@
 
 NovelForge is a local-first structured writing environment for novels. Chapters, scenes, characters, manuscript text, and revision suggestions are stored as linked story objects instead of disconnected documents.
 
+## Status
+
+NovelForge is currently an early v1 scaffold / MVP. The current focus is validating the core local-first workflow for opening a project, editing story content, reviewing structured story objects, and generating useful revision guidance inside the desktop app.
+
 ## Workspace
 
 - `apps/desktop`: Tauri desktop app with the React UI and Rust SQLite command layer
@@ -18,6 +22,14 @@ NovelForge is a local-first structured writing environment for novels. Chapters,
 - Scene workspace with TipTap editor, metadata, chapter context, character context, and warnings
 - Characters view with structured voice/arc cards and relationship editing
 - Suggestion inbox backed by rule-based impact analysis running in a worker
+
+## Roadmap / Next milestone
+
+- Open an existing `.novelforge` project
+- Edit a scene in the workspace
+- View linked story objects such as chapters, scenes, and characters
+- Generate structured continuity and story suggestions
+- Save changes back to the project file cleanly
 
 ## Commands
 
