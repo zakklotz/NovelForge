@@ -3,6 +3,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { SaveChapterInput } from "@novelforge/domain";
 import { sampleProjectSnapshot } from "@novelforge/test-fixtures";
 import { AppRouter } from "@/router";
 import { useUiStore } from "@/store/uiStore";
@@ -11,6 +12,8 @@ const tauriApiMock = vi.hoisted(() => ({
   restoreLastProject: vi.fn(),
   closeProject: vi.fn(),
   getProjectSnapshot: vi.fn(),
+  saveChapter: vi.fn(),
+  reorderChapters: vi.fn(),
   syncSuggestions: vi.fn(),
   saveProjectState: vi.fn(),
   getAppSettings: vi.fn(),
@@ -29,8 +32,8 @@ vi.mock("@/lib/tauri", () => ({
     restoreLastProject: tauriApiMock.restoreLastProject,
     closeProject: tauriApiMock.closeProject,
     getProjectSnapshot: tauriApiMock.getProjectSnapshot,
-    saveChapter: vi.fn(),
-    reorderChapters: vi.fn(),
+    saveChapter: tauriApiMock.saveChapter,
+    reorderChapters: tauriApiMock.reorderChapters,
     saveScene: vi.fn(),
     moveScene: vi.fn(),
     saveManuscript: vi.fn(),
@@ -57,6 +60,24 @@ class MockWorker {
   terminate() {}
 }
 
+function reorderChaptersInSnapshot(
+  snapshot: typeof sampleProjectSnapshot,
+  chapterIds: string[],
+) {
+  const orderIndexById = new Map(chapterIds.map((chapterId, index) => [chapterId, index]));
+
+  return {
+    ...snapshot,
+    chapters: snapshot.chapters
+      .map((chapter) => ({
+        ...chapter,
+        orderIndex: orderIndexById.get(chapter.id) ?? chapter.orderIndex,
+        updatedAt: "2026-04-01T12:00:00.000Z",
+      }))
+      .sort((left, right) => left.orderIndex - right.orderIndex),
+  };
+}
+
 describe("StoryOverviewView", () => {
   let currentSnapshot = structuredClone(sampleProjectSnapshot);
 
@@ -67,6 +88,24 @@ describe("StoryOverviewView", () => {
     tauriApiMock.restoreLastProject.mockResolvedValue(null);
     tauriApiMock.closeProject.mockResolvedValue(undefined);
     tauriApiMock.getProjectSnapshot.mockImplementation(async () => currentSnapshot);
+    tauriApiMock.saveChapter.mockImplementation(async (input: SaveChapterInput) => {
+      const savedChapter = {
+        ...input,
+        createdAt: "2026-04-01T12:00:00.000Z",
+        updatedAt: "2026-04-01T12:00:00.000Z",
+      };
+      currentSnapshot = {
+        ...currentSnapshot,
+        chapters: [...currentSnapshot.chapters, savedChapter],
+      };
+      return savedChapter;
+    });
+    tauriApiMock.reorderChapters.mockImplementation(
+      async (_projectId: string, chapterIds: string[]) => {
+      currentSnapshot = reorderChaptersInSnapshot(currentSnapshot, chapterIds);
+      return currentSnapshot.chapters;
+      },
+    );
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
     tauriApiMock.saveProjectState.mockImplementation(async (projectState) => {
       currentSnapshot = {
@@ -118,6 +157,75 @@ describe("StoryOverviewView", () => {
       queryClient,
     };
   }
+
+  it("adds a new chapter directly from the story spine", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Add Chapter",
+      }),
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByRole("article")).toHaveLength(3);
+    });
+
+    expect(window.location.pathname).toBe("/story");
+    expect(
+      screen
+        .getAllByRole("heading", { level: 3 })
+        .map((element) => element.textContent),
+    ).toContain("Chapter 3");
+    expect(tauriApiMock.saveChapter).toHaveBeenCalledTimes(1);
+    expect(tauriApiMock.saveChapter).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: "Chapter 3",
+        projectId: sampleProjectSnapshot.project.id,
+        orderIndex: 2,
+      }),
+    );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves chapters through the backend reorder flow", async () => {
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Story Spine")).toBeTruthy();
+    });
+
+    const firstChapterCard = screen.getAllByRole("article")[0];
+    fireEvent.click(
+      within(firstChapterCard).getByRole("button", {
+        name: /Move Chapter 1: The Wrong Package later/i,
+      }),
+    );
+
+    await waitFor(() => {
+      const chapterHeadings = screen
+        .getAllByRole("heading", { level: 3 })
+        .map((element) => element.textContent);
+      expect(chapterHeadings.slice(0, 2)).toEqual([
+        "Chapter 2: Border Sparks",
+        "Chapter 1: The Wrong Package",
+      ]);
+    });
+
+    expect(tauriApiMock.reorderChapters).toHaveBeenCalledWith(
+      sampleProjectSnapshot.project.id,
+      ["chapter-2", "chapter-1"],
+    );
+
+    unmount();
+    queryClient.clear();
+  });
 
   it("shows low-risk structural chapter warnings on the spine", async () => {
     currentSnapshot = {

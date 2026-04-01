@@ -1,8 +1,11 @@
+import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type { Chapter, ProjectSnapshot, Scene } from "@novelforge/domain";
-import { ChevronRight } from "lucide-react";
+import { ArrowDown, ArrowUp, ChevronRight, Plus } from "lucide-react";
 import { Badge, Button, EmptyState, Panel, SectionHeading } from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
+import { useProjectRuntime } from "@/hooks/useProjectRuntime";
+import { createId } from "@/lib/ids";
 import { useUiStore } from "@/store/uiStore";
 
 interface StructuralWarning {
@@ -60,19 +63,56 @@ function buildChapterSearchText(chapter: Chapter, scenes: Scene[]) {
     .toLowerCase();
 }
 
+function buildReorderedChapterIds(
+  chapters: Chapter[],
+  chapterId: string,
+  direction: "earlier" | "later",
+) {
+  const currentIds = chapters.map((chapter) => chapter.id);
+  const currentIndex = currentIds.indexOf(chapterId);
+
+  if (currentIndex === -1) {
+    return null;
+  }
+
+  const targetIndex = direction === "earlier" ? currentIndex - 1 : currentIndex + 1;
+  if (targetIndex < 0 || targetIndex >= currentIds.length) {
+    return null;
+  }
+
+  const reordered = [...currentIds];
+  const [movedChapterId] = reordered.splice(currentIndex, 1);
+
+  if (!movedChapterId) {
+    return null;
+  }
+
+  reordered.splice(targetIndex, 0, movedChapterId);
+
+  return reordered;
+}
+
 export function StoryOverviewView() {
   const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
+  const { reorderChapters, saveChapter } = useProjectRuntime();
   const searchText = useUiStore((state) => state.searchText);
   const setSelectedChapterId = useUiStore((state) => state.setSelectedChapterId);
   const snapshot = snapshotQuery.data;
+  const [isAddingChapter, setIsAddingChapter] = useState(false);
+  const [movingChapterId, setMovingChapterId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   if (!snapshot) {
     return null;
   }
 
-  const orderedChapters = buildOrderedChapters(snapshot);
-  const chapterScenes = buildChapterSceneMap(snapshot);
+  const currentSnapshot = snapshot;
+  const orderedChapters = buildOrderedChapters(currentSnapshot);
+  const chapterScenes = buildChapterSceneMap(currentSnapshot);
+  const chapterOrderIndex = new Map(
+    orderedChapters.map((chapter, index) => [chapter.id, index]),
+  );
   const normalizedSearchText = searchText.trim().toLowerCase();
   const filteredChapters = orderedChapters.filter((chapter) => {
     if (!normalizedSearchText) {
@@ -83,11 +123,71 @@ export function StoryOverviewView() {
       normalizedSearchText,
     );
   });
-  const mappedSceneCount = snapshot.scenes.filter((scene) => scene.chapterId !== null).length;
-  const unassignedSceneCount = snapshot.scenes.filter((scene) => scene.chapterId === null).length;
+  const mappedSceneCount = currentSnapshot.scenes.filter((scene) => scene.chapterId !== null).length;
+  const unassignedSceneCount =
+    currentSnapshot.scenes.filter((scene) => scene.chapterId === null).length;
   const chaptersNeedingAttentionCount = orderedChapters.filter((chapter) => {
     return getChapterStructuralWarnings(chapter, chapterScenes[chapter.id]?.length ?? 0).length > 0;
   }).length;
+  const isMutatingStructure = isAddingChapter || movingChapterId !== null;
+
+  async function handleAddChapter() {
+    setActionError(null);
+    setIsAddingChapter(true);
+
+    try {
+      const nextIndex =
+        orderedChapters.reduce((max, chapter) => Math.max(max, chapter.orderIndex), -1) + 1;
+      const newChapter = {
+        id: createId("chapter"),
+        projectId: currentSnapshot.project.id,
+        title: `Chapter ${orderedChapters.length + 1}`,
+        summary: "",
+        purpose: "",
+        majorEvents: [],
+        emotionalMovement: "",
+        characterFocusIds: [],
+        setupPayoffNotes: "",
+        orderIndex: nextIndex,
+      };
+
+      await saveChapter(newChapter);
+      setSelectedChapterId(newChapter.id);
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "NovelForge could not add that chapter.",
+      );
+    } finally {
+      setIsAddingChapter(false);
+    }
+  }
+
+  async function handleMoveChapter(chapterId: string, direction: "earlier" | "later") {
+    const reorderedChapterIds = buildReorderedChapterIds(
+      orderedChapters,
+      chapterId,
+      direction,
+    );
+
+    if (!reorderedChapterIds) {
+      return;
+    }
+
+    setActionError(null);
+    setMovingChapterId(chapterId);
+
+    try {
+      await reorderChapters(currentSnapshot.project.id, reorderedChapterIds);
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "NovelForge could not update the story spine order.",
+      );
+    } finally {
+      setMovingChapterId(null);
+    }
+  }
 
   return (
     <Panel className="h-full min-h-0">
@@ -95,9 +195,19 @@ export function StoryOverviewView() {
         title="Story Spine"
         description="Scan the full story in chapter order, spot obvious structural gaps, and jump straight into chapter or scene workspaces when something needs attention."
         actions={
-          <Button variant="secondary" onClick={() => void navigate({ to: "/chapters" })}>
-            Open Chapters Board
-          </Button>
+          <div className="flex flex-wrap gap-3">
+            <Button onClick={() => void handleAddChapter()} disabled={isMutatingStructure}>
+              <Plus className="size-4" />
+              {isAddingChapter ? "Adding..." : "Add Chapter"}
+            </Button>
+            <Button
+              variant="secondary"
+              onClick={() => void navigate({ to: "/chapters" })}
+              disabled={isMutatingStructure}
+            >
+              Open Chapters Board
+            </Button>
+          </div>
         }
       />
 
@@ -156,6 +266,12 @@ export function StoryOverviewView() {
         </Panel>
       ) : null}
 
+      {actionError ? (
+        <Panel className="mt-6 bg-[color:rgba(174,67,45,0.08)] shadow-none">
+          <p className="text-sm text-[var(--danger)]">{actionError}</p>
+        </Panel>
+      ) : null}
+
       <div className="mt-6 grid gap-4">
         {filteredChapters.length === 0 ? (
           <EmptyState
@@ -163,11 +279,12 @@ export function StoryOverviewView() {
             description={
               normalizedSearchText
                 ? "Try a different quick filter to bring chapters and scenes back into view."
-                : "Create the first chapter on the chapters board to start shaping the full story."
+                : "Create the first chapter here to start shaping the full story structure."
             }
             action={
-              <Button variant="secondary" onClick={() => void navigate({ to: "/chapters" })}>
-                Open Chapters Board
+              <Button onClick={() => void handleAddChapter()} disabled={isMutatingStructure}>
+                <Plus className="size-4" />
+                {isAddingChapter ? "Adding..." : "Create Chapter"}
               </Button>
             }
           />
@@ -175,7 +292,9 @@ export function StoryOverviewView() {
           filteredChapters.map((chapter) => {
             const scenes = chapterScenes[chapter.id] ?? [];
             const warnings = getChapterStructuralWarnings(chapter, scenes.length);
-
+            const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
+            const isFirstChapter = currentChapterIndex === 0;
+            const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
             return (
               <article
                 key={chapter.id}
@@ -191,27 +310,53 @@ export function StoryOverviewView() {
                     </h3>
                   </div>
 
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Badge tone="accent">
-                      {scenes.length} scene{scenes.length === 1 ? "" : "s"}
-                    </Badge>
-                    {warnings.map((warning) => (
-                      <Badge key={`${chapter.id}-${warning.label}`} tone={warning.tone}>
-                        {warning.label}
+                  <div className="flex flex-col items-start gap-3 sm:items-end">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge tone="accent">
+                        {scenes.length} scene{scenes.length === 1 ? "" : "s"}
                       </Badge>
-                    ))}
-                    <Button
-                      variant="secondary"
-                      onClick={() => {
-                        setSelectedChapterId(chapter.id);
-                        void navigate({
-                          to: "/chapters/$chapterId",
-                          params: { chapterId: chapter.id },
-                        });
-                      }}
-                    >
-                      Open Chapter Workspace
-                    </Button>
+                      {warnings.map((warning) => (
+                        <Badge key={`${chapter.id}-${warning.label}`} tone={warning.tone}>
+                          {warning.label}
+                        </Badge>
+                      ))}
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        className="px-3 py-2"
+                        onClick={() => void handleMoveChapter(chapter.id, "earlier")}
+                        disabled={isMutatingStructure || isFirstChapter}
+                        aria-label={`Move ${chapter.title} earlier`}
+                      >
+                        <ArrowUp className="size-4" />
+                        Earlier
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        className="px-3 py-2"
+                        onClick={() => void handleMoveChapter(chapter.id, "later")}
+                        disabled={isMutatingStructure || isLastChapter}
+                        aria-label={`Move ${chapter.title} later`}
+                      >
+                        <ArrowDown className="size-4" />
+                        Later
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        onClick={() => {
+                          setSelectedChapterId(chapter.id);
+                          void navigate({
+                            to: "/chapters/$chapterId",
+                            params: { chapterId: chapter.id },
+                          });
+                        }}
+                        disabled={isMutatingStructure}
+                      >
+                        Open Chapter Workspace
+                      </Button>
+                    </div>
                   </div>
                 </div>
 
