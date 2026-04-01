@@ -360,6 +360,14 @@ const storyDiagnosticSections: Array<{
     tone: "accent",
   },
   {
+    key: "actBalanceNotes",
+    title: "Act Balance / Pacing",
+    description:
+      "Places where the overall chapter load may feel front-heavy, thin in the middle, or overloaded late.",
+    emptyMessage: "No broad act-balance or pacing concerns surfaced in this review pass.",
+    tone: "accent",
+  },
+  {
     key: "nextPlanningTargets",
     title: "Next Planning Targets",
     description: "Highest-leverage planning passes to tackle next.",

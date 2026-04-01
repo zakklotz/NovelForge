@@ -381,6 +381,7 @@ pub struct StoryStructureDiagnostic {
     pub brief_alignment_notes: Vec<StoryBriefAlignmentNote>,
     pub ending_direction_preparation: Vec<StoryDiagnosticEntry>,
     pub setup_payoff_support: Vec<StoryDiagnosticEntry>,
+    pub act_balance_notes: Vec<StoryDiagnosticEntry>,
     pub next_planning_targets: Vec<StoryDiagnosticEntry>,
 }
 

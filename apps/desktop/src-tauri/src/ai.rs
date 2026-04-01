@@ -227,6 +227,8 @@ struct RawStoryStructureDiagnostic {
     #[serde(default)]
     setup_payoff_support: Vec<RawStoryDiagnosticEntry>,
     #[serde(default)]
+    act_balance_notes: Vec<RawStoryDiagnosticEntry>,
+    #[serde(default)]
     next_planning_targets: Vec<RawStoryDiagnosticEntry>,
 }
 
@@ -933,6 +935,12 @@ Return JSON only with this exact top-level shape:\n\
         \"focus\": null,\n\
         \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
       }}],\n\
+      \"actBalanceNotes\": [{{\n\
+        \"title\": \"\",\n\
+        \"detail\": \"\",\n\
+        \"focus\": null,\n\
+        \"related\": [{{ \"kind\": \"chapter\", \"id\": \"\", \"title\": \"\" }}]\n\
+      }}],\n\
       \"nextPlanningTargets\": [{{\n\
         \"title\": \"\",\n\
         \"detail\": \"\",\n\
@@ -957,6 +965,8 @@ Rules:\n\
 - If the saved brief has no meaningful ending direction, leave endingDirectionPreparation empty.\n\
 - In setupPayoffSupport, add 0 to 3 planning-oriented notes about thin setup, expected payoff targets, or groundwork that may need reinforcement when a meaningful setup/payoff thread is apparent.\n\
 - If there is not enough evidence of a meaningful setup/payoff thread, leave setupPayoffSupport empty.\n\
+- In actBalanceNotes, add 0 to 3 planning-oriented notes about front-loaded setup, thin middle development, overloaded late turns, or uneven chapter load only when that pacing imbalance is genuinely visible in the current spine.\n\
+- If evidence of broad pacing imbalance is weak, leave actBalanceNotes empty.\n\
 - Keep beat outlines concise and line-based.\n\
 - Use existing ids when they are present in the context.\n\
 - For manuscriptText, return rough-draft HTML using simple <p> paragraphs only.\n\
@@ -1005,6 +1015,10 @@ Task:\n\
 - Only add a setupPayoffSupport note when the current structure gives enough evidence of an actual setup/payoff thread, such as a planted promise, a chapter setupPayoffNotes thread, or an implied later resolution.\n\
 - Keep setupPayoffSupport selective and review-only: 0 to 3 entries focused on seeding, support, and payoff preparation rather than inventing new plot lines.\n\
 - If there is not enough evidence of a meaningful setup/payoff thread, leave setupPayoffSupport empty.\n\
+- Use result.storyStructureDiagnostic.actBalanceNotes for narrow planning notes about overall pacing balance across the chapter structure.\n\
+- Only add an actBalanceNote when the current spine gives enough evidence of a real distribution issue, such as setup being too concentrated early, the middle carrying too little development pressure, or later chapters appearing overloaded with payoffs or major turns.\n\
+- Keep actBalanceNotes selective and review-only: 0 to 3 entries focused on pacing balance, chapter load, and structural distribution rather than prescribing a full rewrite.\n\
+- If evidence of broad pacing imbalance is weak, leave actBalanceNotes empty.\n\
 - Use result.storyStructureDiagnostic.nextPlanningTargets for the highest-leverage next planning passes.\n\
 - Keep each diagnostic entry concise: a short title, a compact detail note, one focus ref when possible, and optional related refs.\n\
 - Prefer chapter refs for chapter-level issues and scene refs for scene-level issues.\n\
@@ -1282,6 +1296,11 @@ fn map_story_structure_diagnostic(raw: RawStoryStructureDiagnostic) -> StoryStru
             .collect(),
         setup_payoff_support: raw
             .setup_payoff_support
+            .into_iter()
+            .filter_map(map_story_diagnostic_entry)
+            .collect(),
+        act_balance_notes: raw
+            .act_balance_notes
             .into_iter()
             .filter_map(map_story_diagnostic_entry)
             .collect(),
@@ -1925,6 +1944,14 @@ mod tests {
           "related": [{ "kind": "scene", "id": "scene-3", "title": "Checkpoint Lanterns" }]
         }
       ],
+      "actBalanceNotes": [
+        {
+          "title": "The middle spine may be carrying too little development pressure",
+          "detail": "The opening load is clear, but the current chapter spread still looks light in the middle relative to the setup it launches and the later turns it suggests.",
+          "focus": { "kind": "chapter", "id": "chapter-2", "title": "Chapter 2: Border Sparks" },
+          "related": [{ "kind": "chapter", "id": "chapter-1", "title": "Chapter 1: The Wrong Package" }]
+        }
+      ],
       "nextPlanningTargets": [
         {
           "title": "Define the chapter-level irreversible turn",
@@ -1998,6 +2025,14 @@ mod tests {
                 .map(|reference| reference.id.as_str()),
             Some("chapter-2")
         );
+        assert_eq!(result.story_structure_diagnostic.act_balance_notes.len(), 1);
+        assert_eq!(
+            result.story_structure_diagnostic.act_balance_notes[0]
+                .focus
+                .as_ref()
+                .map(|reference| reference.id.as_str()),
+            Some("chapter-2")
+        );
         assert_eq!(
             result
                 .story_structure_diagnostic
@@ -2038,6 +2073,7 @@ mod tests {
       ],
       "endingDirectionPreparation": [],
       "setupPayoffSupport": [],
+      "actBalanceNotes": [],
       "nextPlanningTargets": []
     }
   }
@@ -2123,6 +2159,10 @@ mod tests {
             .is_empty());
         assert!(result
             .story_structure_diagnostic
+            .act_balance_notes
+            .is_empty());
+        assert!(result
+            .story_structure_diagnostic
             .next_planning_targets
             .is_empty());
     }
@@ -2167,6 +2207,8 @@ mod tests {
         assert!(
             prompt.contains("If there is not enough evidence of a meaningful setup/payoff thread")
         );
+        assert!(prompt.contains("result.storyStructureDiagnostic.actBalanceNotes"));
+        assert!(prompt.contains("If evidence of broad pacing imbalance is weak"));
     }
 
     #[test]
@@ -2194,6 +2236,7 @@ mod tests {
         assert!(
             prompt.contains("If there is not enough evidence of a meaningful setup/payoff thread")
         );
+        assert!(prompt.contains("If evidence of broad pacing imbalance is weak"));
     }
 
     #[test]

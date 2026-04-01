@@ -159,6 +159,25 @@ describe("domain schemas", () => {
                 ],
               },
             ],
+            actBalanceNotes: [
+              {
+                title: "The middle spine may be carrying too little development pressure",
+                detail:
+                  "The opening establishes the premise cleanly, but the current chapter spread still looks light in the middle relative to the setup load and later turns it implies.",
+                focus: {
+                  kind: "chapter",
+                  id: "chapter-2",
+                  title: "Chapter 2: Border Sparks",
+                },
+                related: [
+                  {
+                    kind: "chapter",
+                    id: "chapter-1",
+                    title: "Chapter 1: The Wrong Package",
+                  },
+                ],
+              },
+            ],
             nextPlanningTargets: [],
           },
         },
@@ -188,6 +207,7 @@ describe("domain schemas", () => {
     expect(parsed.result.storyStructureDiagnostic.briefAlignmentNotes).toEqual([]);
     expect(parsed.result.storyStructureDiagnostic.endingDirectionPreparation).toEqual([]);
     expect(parsed.result.storyStructureDiagnostic.setupPayoffSupport).toEqual([]);
+    expect(parsed.result.storyStructureDiagnostic.actBalanceNotes).toEqual([]);
     expect(parsed.result.storyStructureDiagnostic.nextPlanningTargets).toEqual([]);
   });
 

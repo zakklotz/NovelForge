@@ -265,6 +265,25 @@ function createStoryDiagnosticResponse() {
             ],
           },
         ],
+        actBalanceNotes: [
+          {
+            title: "The middle spine may be carrying too little development pressure",
+            detail:
+              "The opening load is clear, but the current chapter spread still looks light in the middle relative to the setup it launches and the later turns it suggests.",
+            focus: {
+              kind: "chapter",
+              id: "chapter-2",
+              title: "Chapter 2: Border Sparks",
+            },
+            related: [
+              {
+                kind: "chapter",
+                id: "chapter-1",
+                title: "Chapter 1: The Wrong Package",
+              },
+            ],
+          },
+        ],
         nextPlanningTargets: [
           {
             title: "Clarify what Chapter 2 permanently changes",
@@ -603,6 +622,7 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Story Brief Alignment")).toBeTruthy();
     expect(screen.getByText("Ending Direction Preparation")).toBeTruthy();
     expect(screen.getByText("Setup/Payoff Support")).toBeTruthy();
+    expect(screen.getByText("Act Balance / Pacing")).toBeTruthy();
     expect(screen.getByText("Next Planning Targets")).toBeTruthy();
     expect(screen.getByText("Support")).toBeTruthy();
     expect(screen.getByText("Weak support")).toBeTruthy();
@@ -615,6 +635,9 @@ describe("StoryOverviewView", () => {
     ).toBeTruthy();
     expect(
       screen.getByText("Chapter 2 only lightly seeds Rian's iron vulnerability payoff"),
+    ).toBeTruthy();
+    expect(
+      screen.getByText("The middle spine may be carrying too little development pressure"),
     ).toBeTruthy();
     expect(
       screen.getAllByRole("button", { name: "Chapter 2: Border Sparks" }).length,
@@ -688,6 +711,7 @@ describe("StoryOverviewView", () => {
       briefAlignmentNotes: [],
       endingDirectionPreparation: [],
       setupPayoffSupport: [],
+      actBalanceNotes: [],
       nextPlanningTargets: [],
     };
     tauriApiMock.runStructuredAiAction.mockResolvedValue(response);
@@ -718,6 +742,10 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Setup/Payoff Support")).toBeTruthy();
     expect(
       screen.getByText("No setup/payoff support concerns surfaced in this review pass."),
+    ).toBeTruthy();
+    expect(screen.getByText("Act Balance / Pacing")).toBeTruthy();
+    expect(
+      screen.getByText("No broad act-balance or pacing concerns surfaced in this review pass."),
     ).toBeTruthy();
     expect(screen.queryByText("Ending Direction Preparation")).toBeNull();
     expect(screen.queryByText("Support")).toBeNull();
