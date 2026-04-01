@@ -1095,7 +1095,7 @@ describe("StoryOverviewView", () => {
     queryClient.clear();
   });
 
-  it("moves an unassigned scene into a chapter through the backend move command", async () => {
+  it("moves an unassigned scene into a chapter end by default through the backend move command", async () => {
     currentSnapshot = {
       ...currentSnapshot,
       scenes: [
@@ -1128,6 +1128,99 @@ describe("StoryOverviewView", () => {
 
     await waitFor(() => {
       expect(screen.queryByText("Unassigned Scenes")).toBeNull();
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves an unassigned scene to chapter beginning through the backend move command", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+      target: { value: "chapter-2" },
+    });
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "start" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-unassigned",
+      targetChapterId: "chapter-2",
+      targetIndex: 0,
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("moves an unassigned scene after a selected chapter scene through the backend move command", async () => {
+    const targetAnchor = currentSnapshot.scenes.find((scene) => scene.id === "scene-3");
+    if (!targetAnchor) {
+      throw new Error("Expected chapter 2 anchor scene in sample project.");
+    }
+
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        {
+          ...targetAnchor,
+          id: "scene-4",
+          orderIndex: 1,
+          title: "Signal Fire",
+          summary: "A second chapter scene gives the move flow a middle insertion point.",
+          purpose: "Hold the line after the checkpoint.",
+          dependencySceneIds: ["scene-3"],
+        },
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+      target: { value: "chapter-2" },
+    });
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "after" },
+    });
+    fireEvent.change(screen.getByLabelText(/after scene/i), {
+      target: { value: "scene-3" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
+
+    await waitFor(() => {
+      expect(tauriApiMock.moveScene).toHaveBeenCalledTimes(1);
+    });
+
+    expect(tauriApiMock.moveScene).toHaveBeenCalledWith({
+      projectId: currentSnapshot.project.id,
+      sceneId: "scene-unassigned",
+      targetChapterId: "chapter-2",
+      targetIndex: 1,
     });
 
     unmount();
