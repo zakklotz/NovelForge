@@ -21,9 +21,11 @@ import {
   EmptyState,
   Field,
   Input,
+  ListRow,
   Panel,
   SectionHeading,
   Select,
+  TabButton,
   Textarea,
 } from "@/components/ui";
 import { useAiRuntime } from "@/hooks/useAiRuntime";
@@ -1450,9 +1452,7 @@ export function SceneWorkspaceView() {
         data-jump-highlighted={isJumpHighlighted ? "true" : undefined}
         className={cn(
           "min-h-0 overflow-y-auto outline-none transition",
-          isJumpHighlighted
-            ? "ring-2 ring-[color:rgba(184,88,63,0.28)] shadow-[0_0_0_4px_rgba(184,88,63,0.10)]"
-            : null,
+          isJumpHighlighted ? "ring-2 ring-[var(--focus-ring)]" : null,
         )}
       >
         <SectionHeading
@@ -1538,7 +1538,7 @@ export function SceneWorkspaceView() {
             />
           </Field>
           <Field label="Involved Characters">
-            <div className="grid gap-2 rounded-2xl border border-black/8 bg-white/60 p-3">
+            <div className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
               {snapshot.characters.map((character) => (
                 <label
                   key={character.id}
@@ -1569,7 +1569,7 @@ export function SceneWorkspaceView() {
             </div>
           </Field>
           <Field label="Dependencies">
-            <div className="grid gap-2 rounded-2xl border border-black/8 bg-white/60 p-3">
+            <div className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
               {storyOrderedScenes
                 .filter((candidate) => candidate.id !== currentScene.id)
                 .map((candidate) => {
@@ -1659,7 +1659,7 @@ export function SceneWorkspaceView() {
             </div>
           }
         />
-        <div className="mt-6 flex flex-wrap gap-2 rounded-2xl bg-white/60 p-1">
+        <div className="mt-5 flex flex-wrap gap-1 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] p-1">
           {[
             { id: "overview", label: "Overview", icon: Target },
             { id: "beats", label: "Beats", icon: ListOrdered },
@@ -1668,25 +1668,20 @@ export function SceneWorkspaceView() {
             const Icon = tab.icon;
             const active = workspaceTab === tab.id;
             return (
-              <button
+              <TabButton
                 key={tab.id}
-                className={cn(
-                  "flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-medium transition",
-                  active
-                    ? "bg-[var(--accent)] text-white"
-                    : "text-[var(--ink-muted)] hover:bg-white",
-                )}
+                active={active}
                 onClick={() => setWorkspaceTab(tab.id as SceneWorkspaceTab)}
               >
                 <Icon className="size-4" />
                 {tab.label}
-              </button>
+              </TabButton>
             );
           })}
         </div>
 
         {!hasConfiguredAi ? (
-          <Panel className="mt-4 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+          <Panel className="mt-4 bg-[var(--warning-surface)] shadow-none">
             <p className="text-sm text-[var(--warning)]">
               Add a default AI provider and API key in Settings to generate
               beats or rough draft prose from this scene workspace.
@@ -1695,7 +1690,7 @@ export function SceneWorkspaceView() {
         ) : null}
 
         {sceneAiError ? (
-          <Panel className="mt-4 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+          <Panel className="mt-4 bg-[var(--danger-surface)] shadow-none">
             <p className="text-sm text-[var(--danger)]">{sceneAiError}</p>
           </Panel>
         ) : null}
@@ -1763,7 +1758,7 @@ export function SceneWorkspaceView() {
               {structuralPrompts.map((prompt) => (
                 <div
                   key={prompt}
-                  className="rounded-2xl border border-black/8 bg-white/72 px-4 py-4 text-sm text-[var(--ink-muted)]"
+                  className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4 text-sm text-[var(--ink-muted)]"
                 >
                   {prompt}
                 </div>
@@ -1771,7 +1766,7 @@ export function SceneWorkspaceView() {
             </div>
 
             {beatReview ? (
-              <Panel className="bg-white/75 shadow-none">
+              <Panel className="bg-[var(--surface-elevated)] shadow-none">
                 <SectionHeading
                   title="Generated Beat Outline"
                   description={
@@ -1795,14 +1790,14 @@ export function SceneWorkspaceView() {
                   }
                 />
 
-                <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+                <div className="mt-4 rounded-[6px] border border-[color:rgba(0,122,204,0.2)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink-muted)]">
                   Current beats stay untouched while you review. Choose the
                   beats you want, then insert them where they belong or replace
                   using only the checked lines.
                 </div>
 
                 {beatOverlapWarnings.length > 0 ? (
-                  <div className="mt-4 rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                  <div className="mt-4 rounded-[6px] border border-[color:rgba(215,186,125,0.22)] bg-[var(--warning-surface)] px-4 py-3">
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
                       <div className="grid gap-1 text-sm">
@@ -1822,7 +1817,7 @@ export function SceneWorkspaceView() {
                   </div>
                 ) : null}
 
-                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
+                <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
                     <Field label="Insert Position">
                       <Select
@@ -1891,7 +1886,7 @@ export function SceneWorkspaceView() {
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
+                  <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 text-sm text-[var(--ink-muted)]">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-[var(--ink)]">
                         Current Beat Outline
@@ -1907,7 +1902,7 @@ export function SceneWorkspaceView() {
                     </p>
                   </div>
 
-                  <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
+                  <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 text-sm text-[var(--ink-muted)]">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-semibold text-[var(--ink)]">
@@ -1954,10 +1949,10 @@ export function SceneWorkspaceView() {
                               <label
                                 key={`${index}-${beat}`}
                                 className={cn(
-                                  "flex items-start gap-3 rounded-2xl border px-3 py-3 transition",
+                                  "flex items-start gap-3 rounded-[6px] border px-3 py-3 transition",
                                   checked
-                                    ? "border-[color:rgba(184,88,63,0.32)] bg-[color:rgba(184,88,63,0.08)]"
-                                    : "border-black/8 bg-white/72",
+                                    ? "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]"
+                                    : "border-[var(--border)] bg-[var(--surface-elevated)]",
                                 )}
                               >
                                 <input
@@ -2012,12 +2007,12 @@ export function SceneWorkspaceView() {
               </span>
               <span>{draftStatusLabel}</span>
             </div>
-            <div className="prose-editor mt-4 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
+            <div className="prose-editor mt-4 flex-1 rounded-[8px] border border-[var(--border)] bg-[var(--editor-bg)] p-5">
               <EditorContent editor={editor} />
             </div>
 
             {draftReview ? (
-              <Panel className="mt-4 bg-white/75 shadow-none">
+              <Panel className="mt-4 bg-[var(--surface-elevated)] shadow-none">
                 <SectionHeading
                   title="Rough Draft Review"
                   description={
@@ -2055,14 +2050,14 @@ export function SceneWorkspaceView() {
                   }
                 />
 
-                <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+                <div className="mt-4 rounded-[6px] border border-[color:rgba(0,122,204,0.2)] bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink-muted)]">
                   {isDraftReviewApplyPending
                     ? "Selected draft is moving through the existing editor and autosave flow."
                     : "Current draft prose stays untouched while you review. Choose the blocks you want, then insert them where they belong or replace using only the checked prose."}
                 </div>
 
                 {draftOverlapWarnings.length > 0 ? (
-                  <div className="mt-4 rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                  <div className="mt-4 rounded-[6px] border border-[color:rgba(215,186,125,0.22)] bg-[var(--warning-surface)] px-4 py-3">
                     <div className="flex items-start gap-3">
                       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
                       <div className="grid gap-1 text-sm">
@@ -2082,7 +2077,7 @@ export function SceneWorkspaceView() {
                   </div>
                 ) : null}
 
-                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
+                <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                   {isDraftReviewApplyPending ? (
                     <p className="text-sm text-[var(--ink-muted)]">
                       The editor already has the selected draft. This review
@@ -2159,14 +2154,7 @@ export function SceneWorkspaceView() {
                             !canInsertDraft || isDraftReviewApplyPending
                           }
                         >
-                          {isDraftReviewApplyPending &&
-                          draftReviewApplyState?.mode === "insert" ? (
-                            <RefreshCw className="size-4 animate-spin" />
-                          ) : null}
-                          {isDraftReviewApplyPending &&
-                          draftReviewApplyState?.mode === "insert"
-                            ? "Applying..."
-                            : "Insert Selected Draft"}
+                          Insert Selected Draft
                         </Button>
                       </div>
 
@@ -2182,7 +2170,7 @@ export function SceneWorkspaceView() {
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
-                  <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
+                  <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-[var(--ink)]">
                         Current Draft
@@ -2206,7 +2194,7 @@ export function SceneWorkspaceView() {
                     </div>
                   </div>
 
-                  <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
+                  <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="font-semibold text-[var(--ink)]">
@@ -2257,10 +2245,10 @@ export function SceneWorkspaceView() {
                                 <label
                                   key={`${index}-${block.text.slice(0, 32)}`}
                                   className={cn(
-                                    "grid gap-3 rounded-2xl border px-4 py-4 transition",
+                                    "grid gap-3 rounded-[6px] border px-4 py-4 transition",
                                     checked
-                                      ? "border-[color:rgba(184,88,63,0.32)] bg-[color:rgba(184,88,63,0.08)]"
-                                      : "border-black/8 bg-white/72",
+                                      ? "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]"
+                                      : "border-[var(--border)] bg-[var(--surface-elevated)]",
                                   )}
                                 >
                                   <span className="flex items-start gap-3">
@@ -2333,7 +2321,7 @@ export function SceneWorkspaceView() {
         />
 
         <div className="mt-6 space-y-4">
-          <Panel className="bg-white/75">
+          <Panel className="bg-[var(--surface-elevated)]">
             <div className="flex items-center gap-2 text-[var(--accent-strong)]">
               <BookOpen className="size-4" />
               <h3 className="font-semibold">Parent Chapter</h3>
@@ -2369,7 +2357,7 @@ export function SceneWorkspaceView() {
             )}
           </Panel>
 
-          <Panel className="bg-white/75">
+          <Panel className="bg-[var(--surface-elevated)]">
             <div className="flex items-center gap-2 text-[var(--accent-strong)]">
               <Sparkles className="size-4" />
               <h3 className="font-semibold">Nearby Scenes</h3>
@@ -2377,14 +2365,10 @@ export function SceneWorkspaceView() {
             {chapterScenes.length > 0 ? (
               <div className="mt-3 grid gap-2">
                 {chapterScenes.map((item, index) => (
-                  <button
+                  <ListRow
                     key={item.id}
-                    className={cn(
-                      "rounded-2xl border px-4 py-3 text-left transition",
-                      item.id === currentScene.id
-                        ? "border-[color:rgba(184,88,63,0.34)] bg-white"
-                        : "border-black/8 bg-white/70 hover:bg-white",
-                    )}
+                    active={item.id === currentScene.id}
+                    className="rounded-[4px]"
                     onClick={() =>
                       void navigate({
                         to: "/scenes/$sceneId",
@@ -2409,7 +2393,7 @@ export function SceneWorkspaceView() {
                         </p>
                       </div>
                     </div>
-                  </button>
+                  </ListRow>
                 ))}
               </div>
             ) : (
@@ -2420,7 +2404,7 @@ export function SceneWorkspaceView() {
             )}
           </Panel>
 
-          <Panel className="bg-white/75">
+          <Panel className="bg-[var(--surface-elevated)]">
             <div className="flex items-center gap-2 text-[var(--accent-strong)]">
               <Users className="size-4" />
               <h3 className="font-semibold">Relevant Characters</h3>
@@ -2430,7 +2414,7 @@ export function SceneWorkspaceView() {
                 {relatedCharacters.map((character) => (
                   <div
                     key={character.id}
-                    className="rounded-2xl border border-black/8 bg-white/80 px-4 py-4"
+                    className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
@@ -2470,7 +2454,7 @@ export function SceneWorkspaceView() {
             )}
           </Panel>
 
-          <Panel className="bg-white/75">
+          <Panel className="bg-[var(--surface-elevated)]">
             <div className="flex items-center gap-2 text-[var(--accent-strong)]">
               <AlertTriangle className="size-4" />
               <h3 className="font-semibold">Suggestions + Analysis</h3>
@@ -2480,7 +2464,7 @@ export function SceneWorkspaceView() {
                 {relatedSuggestions.map((suggestion) => (
                   <div
                     key={suggestion.id}
-                    className="rounded-2xl border border-black/8 bg-white/80 px-4 py-4"
+                    className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>

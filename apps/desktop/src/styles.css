@@ -1,18 +1,46 @@
 @import "tailwindcss";
 
 :root {
-  --background: linear-gradient(180deg, #f7efe3 0%, #efe3cf 48%, #ecd9c5 100%);
-  --panel: rgba(255, 252, 247, 0.78);
-  --ink: #2a2118;
-  --ink-muted: #6e5a48;
-  --ink-faint: #9a8773;
-  --accent: #b8583f;
-  --accent-strong: #8f3f28;
-  --sand: #e8bf72;
-  --warning: #9b6b13;
-  --danger: #ae432d;
+  color-scheme: dark;
+  --app-bg: #181818;
+  --sidebar-bg: #16181c;
+  --content-bg: #1e1e1e;
+  --panel-bg: #252526;
+  --surface-elevated: #2a2d2e;
+  --surface-raised: #313437;
+  --editor-bg: #1e1e1e;
+  --input-bg: #2a2d2e;
+  --border: #2f3136;
+  --border-strong: #3a3d41;
+  --text-primary: #cccccc;
+  --text-secondary: #9da1a6;
+  --text-muted: #6b7078;
+  --accent: #007acc;
+  --accent-strong: #0e639c;
+  --accent-soft: rgba(0, 122, 204, 0.16);
+  --hover: rgba(255, 255, 255, 0.05);
+  --selected: rgba(255, 255, 255, 0.08);
+  --focus-ring: rgba(0, 122, 204, 0.35);
+  --warning: #d7ba7d;
+  --warning-surface: rgba(215, 186, 125, 0.12);
+  --danger: #f48771;
+  --danger-surface: rgba(244, 135, 113, 0.12);
+  --success: #89d185;
+  --success-surface: rgba(137, 209, 133, 0.12);
+  --sand: #3794ff;
+  --background: var(--app-bg);
+  --panel: var(--panel-bg);
+  --ink: var(--text-primary);
+  --ink-muted: var(--text-secondary);
+  --ink-faint: var(--text-muted);
   color: var(--ink);
-  font-family: "Fraunces", "Spectral", Georgia, serif;
+  font-family:
+    "Segoe UI",
+    "SF Pro Text",
+    "IBM Plex Sans",
+    "Inter",
+    system-ui,
+    sans-serif;
   background: var(--background);
 }
 
@@ -29,10 +57,12 @@ body,
 
 body {
   min-height: 100vh;
-  background:
-    radial-gradient(circle at top right, rgba(255, 255, 255, 0.52), transparent 30%),
-    radial-gradient(circle at bottom left, rgba(184, 88, 63, 0.12), transparent 35%),
-    var(--background);
+  background: var(--background);
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 button,
@@ -42,14 +72,46 @@ select {
   font: inherit;
 }
 
+a {
+  color: inherit;
+}
+
+::selection {
+  background: rgba(0, 122, 204, 0.25);
+  color: var(--text-primary);
+}
+
+* {
+  scrollbar-color: var(--border-strong) var(--panel-bg);
+  scrollbar-width: thin;
+}
+
 .prose-editor .ProseMirror {
   min-height: 55vh;
   outline: none;
   line-height: 1.8;
   font-size: 1rem;
-  color: var(--ink);
+  color: #d4d4d4;
+  font-family:
+    "Iowan Old Style",
+    "Book Antiqua",
+    "Palatino Linotype",
+    "Spectral",
+    Georgia,
+    serif;
 }
 
 .prose-editor .ProseMirror p {
   margin: 0 0 1rem;
+}
+
+.prose-editor .ProseMirror h1,
+.prose-editor .ProseMirror h2,
+.prose-editor .ProseMirror h3,
+.prose-editor .ProseMirror h4 {
+  color: #e6e6e6;
+}
+
+.prose-editor .ProseMirror strong {
+  color: #f3f3f3;
 }

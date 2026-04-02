@@ -153,17 +153,17 @@ export function SceneWorkspaceLeavePrompt() {
   const dirtySummary = describeDirtyAreas(session.dirtyAreas);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(32,22,14,0.4)] p-4 backdrop-blur-sm">
-      <Panel className="w-full max-w-lg shadow-[0_30px_80px_rgba(24,17,10,0.3)]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(0,0,0,0.58)] p-4 backdrop-blur-sm">
+      <Panel className="w-full max-w-lg bg-[var(--content-bg)]">
         <div className="flex items-start gap-3">
-          <div className="rounded-2xl bg-[color:rgba(174,67,45,0.12)] p-3 text-[var(--danger)]">
+          <div className="rounded-[6px] bg-[var(--danger-surface)] p-3 text-[var(--danger)]">
             <AlertTriangle className="size-5" />
           </div>
           <div className="min-w-0 space-y-2">
-            <h2 className="text-xl font-semibold text-[var(--ink)]">
+            <h2 className="text-lg font-semibold text-[var(--ink)]">
               Unsaved {workspaceLabel} changes
             </h2>
-            <p className="text-sm text-[var(--ink-muted)]">
+            <p className="text-[13px] text-[var(--ink-muted)]">
               <span className="font-semibold text-[var(--ink)]">
                 {session.entityTitle}
               </span>{" "}
@@ -173,7 +173,7 @@ export function SceneWorkspaceLeavePrompt() {
         </div>
 
         {errorMessage ? (
-          <Panel className="mt-5 bg-[color:rgba(174,67,45,0.08)] shadow-none">
+          <Panel className="mt-5 bg-[var(--danger-surface)] shadow-none">
             <p className="text-sm text-[var(--danger)]">{errorMessage}</p>
           </Panel>
         ) : null}

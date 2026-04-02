@@ -834,7 +834,7 @@ export function ChapterDetailView() {
         className={cn(
           "min-h-0 overflow-y-auto outline-none transition",
           isJumpHighlighted
-            ? "ring-2 ring-[color:rgba(184,88,63,0.28)] shadow-[0_0_0_4px_rgba(184,88,63,0.10)]"
+            ? "ring-2 ring-[var(--focus-ring)]"
             : null,
         )}
       >
@@ -929,7 +929,7 @@ export function ChapterDetailView() {
 
           <Field label="Character Focus">
             {currentSnapshot.characters.length > 0 ? (
-              <div className="grid gap-2 rounded-2xl border border-black/8 bg-white/60 p-3">
+              <div className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
                 {currentSnapshot.characters.map((character) => (
                   <label
                     key={character.id}
@@ -999,8 +999,8 @@ export function ChapterDetailView() {
         />
 
         <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
-          <Panel className="bg-white/75 shadow-none">
-            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+          <Panel className="bg-[var(--surface-elevated)] shadow-none">
+            <div className="flex items-center gap-2 text-[var(--accent)]">
               <Target className="size-4" />
               <h3 className="font-semibold">Chapter Intent</h3>
             </div>
@@ -1016,8 +1016,8 @@ export function ChapterDetailView() {
             </div>
           </Panel>
 
-          <Panel className="bg-white/75 shadow-none">
-            <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+          <Panel className="bg-[var(--surface-elevated)] shadow-none">
+            <div className="flex items-center gap-2 text-[var(--accent)]">
               <Users className="size-4" />
               <h3 className="font-semibold">Focus Snapshot</h3>
             </div>
@@ -1041,7 +1041,7 @@ export function ChapterDetailView() {
         </div>
 
         {!hasConfiguredAi ? (
-          <Panel className="mt-6 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+          <Panel className="mt-6 bg-[var(--warning-surface)] shadow-none">
             <p className="text-sm text-[var(--warning)]">
               Add a default AI provider and API key in Settings to propose scenes from
               this chapter plan.
@@ -1050,25 +1050,25 @@ export function ChapterDetailView() {
         ) : null}
 
         {sceneProposalError ? (
-          <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+          <Panel className="mt-6 bg-[var(--danger-surface)] shadow-none">
             <p className="text-sm text-[var(--danger)]">{sceneProposalError}</p>
           </Panel>
         ) : null}
 
         {sceneProposalMessage ? (
-          <Panel className="mt-6 bg-[color:rgba(32,151,110,0.08)] shadow-none">
-            <p className="text-sm text-[color:#0f7350]">{sceneProposalMessage}</p>
+          <Panel className="mt-6 bg-[var(--success-surface)] shadow-none">
+            <p className="text-sm text-[var(--success)]">{sceneProposalMessage}</p>
           </Panel>
         ) : null}
 
         {sceneMoveError ? (
-          <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+          <Panel className="mt-6 bg-[var(--danger-surface)] shadow-none">
             <p className="text-sm text-[var(--danger)]">{sceneMoveError}</p>
           </Panel>
         ) : null}
 
         {sceneProposalResponse ? (
-          <Panel className="mt-6 bg-white/75 shadow-none">
+          <Panel className="mt-6 bg-[var(--surface-elevated)] shadow-none">
             <SectionHeading
               title="Scene Proposals"
               description={
@@ -1098,7 +1098,7 @@ export function ChapterDetailView() {
 
             <div className="mt-4 grid gap-3">
               {hasUntitledSelectedSceneProposal ? (
-                <div className="rounded-2xl border border-[color:rgba(174,67,45,0.2)] bg-[color:rgba(174,67,45,0.08)] px-4 py-3 text-sm text-[var(--danger)]">
+                <div className="rounded-[6px] border border-[color:rgba(244,135,113,0.22)] bg-[var(--danger-surface)] px-4 py-3 text-sm text-[var(--danger)]">
                   Give every selected proposal a title before inserting it.
                 </div>
               ) : null}
@@ -1113,7 +1113,7 @@ export function ChapterDetailView() {
                   return (
                     <div
                       key={proposal.reviewId}
-                      className="grid gap-4 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                      className="grid gap-4 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                     >
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <label className="flex items-center gap-3 text-sm font-semibold text-[var(--ink)]">
@@ -1147,7 +1147,7 @@ export function ChapterDetailView() {
                       </div>
 
                       {overlapWarnings.length > 0 ? (
-                        <div className="rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                        <div className="rounded-[6px] border border-[color:rgba(215,186,125,0.22)] bg-[var(--warning-surface)] px-4 py-3">
                           <div className="flex items-start gap-3">
                             <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
                             <div className="grid gap-1 text-sm">
@@ -1260,7 +1260,7 @@ export function ChapterDetailView() {
               chapterScenes.map((scene, index) => (
                 <article
                   key={scene.id}
-                  className="rounded-3xl border border-black/8 bg-white/78 p-5 transition hover:border-[color:rgba(184,88,63,0.34)] hover:bg-white"
+                  className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4 transition hover:bg-[var(--surface-elevated)]"
                 >
                   <div className="flex items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -1356,7 +1356,7 @@ export function ChapterDetailView() {
                     ) : null}
                   </div>
                   {sceneMoveDraft?.sceneId === scene.id ? (
-                    <div className="mt-4 grid gap-3 rounded-2xl border border-black/8 bg-[color:rgba(184,88,63,0.06)] px-4 py-4">
+                    <div className="mt-4 grid gap-3 rounded-[6px] border border-[var(--border)] bg-[var(--accent-soft)] px-4 py-4">
                       <Field label="Move Destination">
                         <Select
                           value={

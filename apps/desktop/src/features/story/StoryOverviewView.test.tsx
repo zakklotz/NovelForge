@@ -1142,7 +1142,7 @@ describe("StoryOverviewView", () => {
     const laterButton = screen.getByRole("button", {
       name: /move ashfall detour later in unassigned/i,
     });
-    const sceneCard = laterButton.closest("div.rounded-3xl");
+    const sceneCard = laterButton.closest("[data-story-spine-card='unassigned-scene']");
     if (!(sceneCard instanceof HTMLElement)) {
       throw new Error("Expected unassigned Story Spine scene card for Ashfall Detour.");
     }
@@ -1193,7 +1193,7 @@ describe("StoryOverviewView", () => {
       .getByRole("button", {
         name: /open glass harbor/i,
       })
-      .closest("div.rounded-3xl");
+      .closest("[data-story-spine-card='unassigned-scene']");
     if (!(otherSceneCard instanceof HTMLElement)) {
       throw new Error("Expected unrelated unassigned Story Spine scene card for Glass Harbor.");
     }
@@ -1601,7 +1601,7 @@ describe("StoryOverviewView", () => {
     const moveButton = screen.getByRole("button", {
       name: /move dock nine exchange to another chapter or unassigned/i,
     });
-    const sceneCard = moveButton.closest("div.rounded-2xl");
+    const sceneCard = moveButton.closest("[data-story-spine-card='chapter-scene']");
     if (!(sceneCard instanceof HTMLElement)) {
       throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
     }
@@ -1800,7 +1800,7 @@ describe("StoryOverviewView", () => {
     const moveButton = screen.getByRole("button", {
       name: /move dock nine exchange to another chapter or unassigned/i,
     });
-    const sceneCard = moveButton.closest("div.rounded-2xl");
+    const sceneCard = moveButton.closest("[data-story-spine-card='chapter-scene']");
     if (!(sceneCard instanceof HTMLElement)) {
       throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
     }

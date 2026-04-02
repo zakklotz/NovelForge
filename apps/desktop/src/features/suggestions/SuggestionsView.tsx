@@ -37,12 +37,12 @@ export function SuggestionsView() {
           </Button>
         }
       />
-      <div className="mt-6 grid gap-4">
+      <div className="mt-5 grid gap-1 border-t border-[var(--border)] pt-4">
         {suggestions.length > 0 ? (
           suggestions.map((suggestion) => (
             <div
               key={suggestion.id}
-              className="rounded-[2rem] border border-black/8 bg-white/80 p-5"
+              className="border-l-2 border-transparent bg-[var(--panel)] px-4 py-3 transition hover:bg-[var(--surface-elevated)]"
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-2">
@@ -61,10 +61,10 @@ export function SuggestionsView() {
                     <Badge tone="accent">{suggestion.type}</Badge>
                     <Badge>{suggestion.status}</Badge>
                   </div>
-                  <h3 className="text-lg font-semibold text-[var(--ink)]">
+                  <h3 className="text-[14px] font-semibold text-[var(--ink)]">
                     {suggestion.title}
                   </h3>
-                  <p className="max-w-3xl text-sm text-[var(--ink-muted)]">
+                  <p className="max-w-3xl text-[13px] text-[var(--ink-muted)]">
                     {suggestion.rationale}
                   </p>
                 </div>
@@ -104,7 +104,7 @@ export function SuggestionsView() {
                   ))}
                 </div>
               ) : null}
-              <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.06)] px-4 py-3 text-sm text-[var(--ink-muted)]">
+              <div className="mt-4 rounded-[4px] border border-[var(--border)] bg-[var(--surface-elevated)] px-3 py-2 text-[13px] text-[var(--ink-muted)]">
                 {suggestion.proposedAction}
               </div>
             </div>

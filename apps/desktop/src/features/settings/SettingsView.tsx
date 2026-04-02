@@ -30,7 +30,7 @@ const providerMeta: Record<
   openrouter: {
     label: "OpenRouter",
     note: "Good fallback for rotating free open models and experimentation.",
-    accent: "bg-[color:rgba(194,151,57,0.16)] text-[var(--warning)]",
+    accent: "bg-[var(--warning-surface)] text-[var(--warning)]",
   },
 };
 
@@ -225,7 +225,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
 
   return (
     <div className={layoutClassName}>
-      <Panel className={standalone ? "bg-[color:rgba(255,248,239,0.85)]" : undefined}>
+      <Panel className={standalone ? "bg-[var(--content-bg)]" : undefined}>
         <SectionHeading
           title="AI Settings"
           description="Bring your own keys for free-model providers and keep those credentials outside project files."
@@ -234,7 +234,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
               {standalone ? (
                 <Link
                   to="/"
-                  className="inline-flex items-center rounded-xl px-3 py-2 text-sm font-semibold text-[var(--ink-muted)] transition hover:bg-black/5"
+                  className="inline-flex items-center rounded-[4px] px-3 py-2 text-xs font-medium text-[var(--ink-muted)] transition hover:bg-[var(--hover)]"
                 >
                   Back
                 </Link>
@@ -246,9 +246,9 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
             </div>
           }
         />
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1.2fr)_320px]">
+        <div className="mt-5 grid gap-3 border-t border-[var(--border)] pt-4 lg:grid-cols-[minmax(0,1.2fr)_320px]">
           <div className="grid gap-4">
-            <Panel className="bg-white/70">
+            <Panel className="bg-[var(--surface-elevated)]">
               <Field label="Default Provider">
                 <Select
                   value={draft.defaultProvider}
@@ -297,11 +297,11 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
               const connectionError = testErrors[providerId];
 
               return (
-                <Panel key={providerId} className="bg-white/75">
+                <Panel key={providerId} className="bg-[var(--panel)]">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="space-y-2">
                       <div className="flex items-center gap-3">
-                        <h3 className="text-lg font-semibold text-[var(--ink)]">
+                        <h3 className="text-[14px] font-semibold text-[var(--ink)]">
                           {providerMeta[providerId].label}
                         </h3>
                         <Badge className={providerMeta[providerId].accent}>
@@ -317,7 +317,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
                       </p>
                     </div>
 
-                    <label className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-2 text-sm font-medium text-[var(--ink)] ring-1 ring-black/8">
+                    <label className="inline-flex items-center gap-2 rounded-[4px] border border-[var(--border)] bg-[var(--surface-elevated)] px-3 py-2 text-[13px] font-medium text-[var(--ink)]">
                       <input
                         type="checkbox"
                         checked={providerDraft.enabled}
@@ -430,13 +430,13 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
                   </div>
 
                   {connectionResult ? (
-                    <div className="mt-4 rounded-2xl bg-[color:rgba(32,151,110,0.08)] px-4 py-3 text-sm text-[color:#0f7350]">
+                    <div className="mt-4 rounded-[6px] border border-[color:rgba(137,209,133,0.22)] bg-[var(--success-surface)] px-4 py-3 text-sm text-[var(--success)]">
                       {connectionResult.message}
                     </div>
                   ) : null}
 
                   {connectionError ? (
-                    <div className="mt-4 rounded-2xl bg-[color:rgba(174,67,45,0.1)] px-4 py-3 text-sm text-[var(--danger)]">
+                    <div className="mt-4 rounded-[6px] border border-[color:rgba(244,135,113,0.22)] bg-[var(--danger-surface)] px-4 py-3 text-sm text-[var(--danger)]">
                       {connectionError}
                     </div>
                   ) : null}
@@ -446,12 +446,12 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
           </div>
 
           <div className="grid gap-4">
-            <Panel className="bg-[color:rgba(51,37,22,0.92)] text-white shadow-none">
+            <Panel className="bg-[var(--sidebar-bg)] text-[var(--ink)] shadow-none">
               <div className="flex items-center gap-3">
-                <Settings2 className="size-5 text-[var(--sand)]" />
+                <Settings2 className="size-5 text-[var(--accent)]" />
                 <div>
-                  <h3 className="text-lg font-semibold">Storage Model</h3>
-                  <p className="mt-1 text-sm text-white/70">
+                  <h3 className="text-[14px] font-semibold">Storage Model</h3>
+                  <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
                     NovelForge stores AI preferences at the desktop-app level and
                     never writes provider keys into `.novelforge` project files.
                   </p>
@@ -459,14 +459,14 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
               </div>
             </Panel>
 
-            <Panel className="bg-white/70">
+            <Panel className="bg-[var(--surface-elevated)]">
               <div className="flex items-center gap-3">
-                <Sparkles className="size-5 text-[var(--accent-strong)]" />
+                <Sparkles className="size-5 text-[var(--accent)]" />
                 <div>
-                  <h3 className="text-lg font-semibold text-[var(--ink)]">
+                  <h3 className="text-[14px] font-semibold text-[var(--ink)]">
                     Free-model recommendations
                   </h3>
-                  <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                  <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
                     These are the first models wired into NovelForge for structured
                     story work.
                   </p>
@@ -474,7 +474,10 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
               </div>
               <div className="mt-4 grid gap-3">
                 {(recommendedModelsQuery.data ?? []).map((model) => (
-                  <div key={`${model.providerId}:${model.modelId}`} className="rounded-2xl bg-white px-4 py-3 ring-1 ring-black/5">
+                  <div
+                    key={`${model.providerId}:${model.modelId}`}
+                    className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3"
+                  >
                     <div className="flex items-center gap-2">
                       <Badge className={providerMeta[model.providerId].accent}>
                         {providerMeta[model.providerId].label}
@@ -495,13 +498,13 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
             </Panel>
 
             {saveMessage ? (
-              <Panel className="bg-[color:rgba(32,151,110,0.08)]">
-                <p className="text-sm text-[color:#0f7350]">{saveMessage}</p>
+              <Panel className="bg-[var(--success-surface)]">
+                <p className="text-sm text-[var(--success)]">{saveMessage}</p>
               </Panel>
             ) : null}
 
             {saveError ? (
-              <Panel className="bg-[color:rgba(174,67,45,0.1)]">
+              <Panel className="bg-[var(--danger-surface)]">
                 <p className="text-sm text-[var(--danger)]">{saveError}</p>
               </Panel>
             ) : null}

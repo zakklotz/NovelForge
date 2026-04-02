@@ -126,7 +126,7 @@ function StartupState({
 }) {
   return (
     <div className="mx-auto max-w-3xl">
-      <Panel>
+      <Panel className="bg-[var(--content-bg)]">
         {isRestoring ? (
           <EmptyState
             title="Checking for your last project"
@@ -184,12 +184,12 @@ function CreateProjectDialog({
   return (
     <div
       ref={dialogRef}
-      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(32,22,14,0.4)] p-4 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-[color:rgba(0,0,0,0.58)] p-4 backdrop-blur-sm"
       role="dialog"
       aria-modal="true"
       aria-label="Create a new project"
     >
-      <Panel className="w-full max-w-3xl shadow-[0_30px_80px_rgba(24,17,10,0.3)]">
+      <Panel className="w-full max-w-3xl bg-[var(--content-bg)]">
         <CreateProjectSurface
           title="New Project"
           description="Start with a title and a few high-value story anchors, then continue shaping the brief from Story once the project opens."

@@ -49,10 +49,10 @@ export function CreateProjectSurface({
   submitLabel?: string;
 }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-5">
       <div>
-        <h2 className="text-2xl font-semibold text-[var(--ink)]">{title}</h2>
-        <p className="mt-2 text-sm text-[var(--ink-muted)]">{description}</p>
+        <h2 className="text-lg font-semibold text-[var(--ink)]">{title}</h2>
+        <p className="mt-2 text-[13px] text-[var(--ink-muted)]">{description}</p>
       </div>
 
       <Field label="New Project Title" hint="Required">
@@ -64,11 +64,11 @@ export function CreateProjectSurface({
         />
       </Field>
 
-      <div className="rounded-[1.5rem] border border-black/8 bg-white/55 px-4 py-4">
+      <div className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-sm font-semibold text-[var(--ink)]">Story Brief Seed</p>
-            <p className="mt-1 text-sm text-[var(--ink-muted)]">
+            <p className="text-[13px] font-semibold text-[var(--ink)]">Story Brief Seed</p>
+            <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
               Start with a few high-value story anchors now, then continue shaping the brief
               from Story.
             </p>
@@ -147,7 +147,7 @@ export function CreateProjectSurface({
         </div>
       </div>
 
-      <p className="text-sm text-[var(--ink-muted)]">
+      <p className="text-[13px] text-[var(--ink-muted)]">
         Keep it light if you want. Anything beyond the title can be skipped and refined later
         in the Story workspace.
       </p>
@@ -160,7 +160,7 @@ export function CreateProjectSurface({
       </div>
 
       {errorMessage ? (
-        <Panel className="bg-[color:rgba(174,67,45,0.1)]">
+        <Panel className="bg-[var(--danger-surface)]">
           <p className="text-sm text-[var(--danger)]">{errorMessage}</p>
         </Panel>
       ) : null}

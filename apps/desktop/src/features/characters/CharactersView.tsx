@@ -148,9 +148,12 @@ function CharacterEditor({ character }: { character: Character }) {
           />
         </Field>
         <Field label="Relationships">
-          <div className="grid gap-3 rounded-2xl border border-black/8 bg-white/60 p-3">
+          <div className="grid gap-3 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] p-3">
             {relationships.map((relationship, index) => (
-              <div key={`${relationship.characterId}-${index}`} className="grid gap-2 rounded-2xl bg-white/80 p-3">
+              <div
+                key={`${relationship.characterId}-${index}`}
+                className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] p-3"
+              >
                 <div className="flex items-center gap-2">
                   <Select
                     value={relationship.characterId}
@@ -228,8 +231,8 @@ function CharacterEditor({ character }: { character: Character }) {
         </Field>
 
         <div className="grid gap-4 xl:grid-cols-2">
-          <Panel className="bg-white/70">
-            <h3 className="text-base font-semibold text-[var(--ink)]">Linked scenes</h3>
+          <Panel className="bg-[var(--surface-elevated)] p-3">
+            <h3 className="text-[13px] font-semibold text-[var(--ink)]">Linked scenes</h3>
             <div className="mt-3 flex flex-wrap gap-2">
               {linkedScenes.map((scene) => (
                 <Badge key={scene.id} tone="accent">
@@ -238,11 +241,14 @@ function CharacterEditor({ character }: { character: Character }) {
               ))}
             </div>
           </Panel>
-          <Panel className="bg-white/70">
-            <h3 className="text-base font-semibold text-[var(--ink)]">Affected scenes</h3>
+          <Panel className="bg-[var(--surface-elevated)] p-3">
+            <h3 className="text-[13px] font-semibold text-[var(--ink)]">Affected scenes</h3>
             <div className="mt-3 grid gap-2">
               {affectedSuggestions.map((suggestion) => (
-                <div key={suggestion.id} className="rounded-2xl bg-white/80 px-3 py-2 text-sm text-[var(--ink-muted)]">
+                <div
+                  key={suggestion.id}
+                  className="rounded-[4px] border border-[var(--border)] bg-[var(--panel)] px-3 py-2 text-[13px] text-[var(--ink-muted)]"
+                >
                   {suggestion.title}
                 </div>
               ))}
@@ -312,7 +318,7 @@ export function CharactersView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,0.8fr)_minmax(360px,1.2fr)]">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(360px,1.2fr)]">
       <Panel className="min-h-0">
         <SectionHeading
           title="Characters"
@@ -324,22 +330,22 @@ export function CharactersView() {
             </Button>
           }
         />
-        <div className="mt-6 grid gap-3">
+        <div className="mt-5 grid gap-1 border-t border-[var(--border)] pt-4">
           {characters.length > 0 ? (
             characters.map((character) => (
               <button
                 key={character.id}
-                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                className={`border-l-2 px-3 py-3 text-left transition ${
                   selectedCharacter?.id === character.id
-                    ? "border-[color:rgba(184,88,63,0.34)] bg-[color:rgba(184,88,63,0.08)]"
-                    : "border-black/8 bg-white/70 hover:border-black/15 hover:bg-white"
+                    ? "border-[var(--accent)] bg-[var(--selected)]"
+                    : "border-transparent hover:bg-[var(--hover)]"
                 }`}
                 onClick={() => setSelectedCharacterId(character.id)}
               >
-                <h3 className="text-base font-semibold text-[var(--ink)]">
+                <h3 className="text-[13px] font-medium text-[var(--ink)]">
                   {character.name}
                 </h3>
-                <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
                   {character.role || "No role set yet."}
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">

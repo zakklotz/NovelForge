@@ -1269,7 +1269,7 @@ export function StoryOverviewView() {
         }
       />
 
-      <Panel className="mt-6 bg-white/82 shadow-none">
+      <Panel className="mt-6 bg-[var(--content-bg)] shadow-none">
         <SectionHeading
           title="Story Brief"
           description="Capture the top-level story intent here so the spine, diagnostics, and later AI context all point at the same target."
@@ -1311,14 +1311,14 @@ export function StoryOverviewView() {
         </div>
 
         {storyBriefError ? (
-          <Panel className="mt-4 bg-[color:rgba(174,67,45,0.08)] shadow-none">
+          <Panel className="mt-4 bg-[var(--danger-surface)] shadow-none">
             <p className="text-sm text-[var(--danger)]">{storyBriefError}</p>
           </Panel>
         ) : null}
 
         <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.95fr)]">
           <div className="grid gap-4">
-            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                 Core Story
               </p>
@@ -1370,7 +1370,7 @@ export function StoryOverviewView() {
           </div>
 
           <div className="grid gap-4">
-            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                 Intent and Direction
               </p>
@@ -1399,7 +1399,7 @@ export function StoryOverviewView() {
               </div>
             </div>
 
-            <div className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4">
+            <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                 Positioning Notes
               </p>
@@ -1445,7 +1445,7 @@ export function StoryOverviewView() {
       </Panel>
 
       <div className="mt-6 grid gap-3 md:grid-cols-3">
-        <div className="rounded-2xl border border-black/8 bg-white/70 px-4 py-4">
+        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
             Chapters
           </p>
@@ -1457,7 +1457,7 @@ export function StoryOverviewView() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-black/8 bg-white/70 px-4 py-4">
+        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
             Mapped Scenes
           </p>
@@ -1467,7 +1467,7 @@ export function StoryOverviewView() {
           </p>
         </div>
 
-        <div className="rounded-2xl border border-black/8 bg-white/70 px-4 py-4">
+        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
             Chapters Needing Attention
           </p>
@@ -1481,7 +1481,7 @@ export function StoryOverviewView() {
       </div>
 
       {!hasConfiguredAi ? (
-        <Panel className="mt-6 bg-[color:rgba(194,151,57,0.12)] shadow-none">
+        <Panel className="mt-6 bg-[var(--warning-surface)] shadow-none">
           <p className="text-sm text-[var(--warning)]">
             Add a default AI provider and API key in Settings to analyze the full
             story structure from the spine.
@@ -1490,19 +1490,19 @@ export function StoryOverviewView() {
       ) : null}
 
       {storyDiagnosticError ? (
-        <Panel className="mt-6 bg-[color:rgba(174,67,45,0.1)] shadow-none">
+        <Panel className="mt-6 bg-[var(--danger-surface)] shadow-none">
           <p className="text-sm text-[var(--danger)]">{storyDiagnosticError}</p>
         </Panel>
       ) : null}
 
       {actionError ? (
-        <Panel className="mt-6 bg-[color:rgba(174,67,45,0.08)] shadow-none">
+        <Panel className="mt-6 bg-[var(--danger-surface)] shadow-none">
           <p className="text-sm text-[var(--danger)]">{actionError}</p>
         </Panel>
       ) : null}
 
       {storyDiagnosticResponse ? (
-        <Panel className="mt-6 bg-white/80 shadow-none">
+        <Panel className="mt-6 bg-[var(--surface-elevated)] shadow-none">
           <SectionHeading
             title="Story Structure Review"
             description={
@@ -1546,7 +1546,7 @@ export function StoryOverviewView() {
               return (
                 <div
                   key={section.key}
-                  className="rounded-[1.5rem] border border-black/8 bg-white/72 px-4 py-4"
+                  className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4"
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div>
@@ -1585,7 +1585,7 @@ export function StoryOverviewView() {
                         return (
                           <div
                             key={`${section.key}-${entry.title}-${index}`}
-                            className="rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                            className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                           >
                             <div className="flex flex-wrap items-center gap-2">
                               {briefAlignmentBadge ? (
@@ -1653,7 +1653,7 @@ export function StoryOverviewView() {
                       })}
                     </div>
                   ) : (
-                    <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">
+                    <div className="mt-4 rounded-[6px] border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5 text-sm text-[var(--ink-muted)]">
                       {section.emptyMessage}
                     </div>
                   )}
@@ -1683,7 +1683,7 @@ export function StoryOverviewView() {
         ) : (
           <>
             {filteredUnassignedScenes.length > 0 ? (
-              <section className="rounded-[1.75rem] border border-black/8 bg-[color:rgba(232,191,114,0.08)] px-5 py-5 shadow-[0_18px_40px_rgba(38,27,16,0.07)]">
+              <section className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                 <SectionHeading
                   title="Unassigned Scenes"
                   description="A deliberate holding area for scenes that belong in the plan, but are not yet placed on the chapter spine."
@@ -1749,19 +1749,21 @@ export function StoryOverviewView() {
                     return (
                       <div
                         key={scene.id}
+                        data-story-spine-card="unassigned-scene"
+                        data-scene-id={scene.id}
                         className={cn(
-                          "rounded-3xl border border-black/8 bg-white/80 px-4 py-4 transition-colors",
+                          "rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 transition-colors",
                           isUpdatingUnassignedScene &&
-                            "border-[color:rgba(184,88,63,0.22)] bg-[color:rgba(184,88,63,0.06)]",
+                            "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]",
                         )}
                         aria-busy={isUpdatingUnassignedScene}
                       >
                         <div className="flex flex-wrap items-start justify-between gap-4">
                           <div className="min-w-0">
-                            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--warning)]">
+                            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[var(--warning)]">
                               Unassigned scene {unassignedIndex + 1}
                             </p>
-                            <p className="mt-2 text-lg font-semibold text-[var(--ink)]">
+                            <p className="mt-2 text-[14px] font-semibold text-[var(--ink)]">
                               {scene.title}
                             </p>
                             <p className="mt-2 text-sm text-[var(--ink-muted)]">
@@ -1824,7 +1826,7 @@ export function StoryOverviewView() {
                         </div>
 
                         {orderedChapters.length > 0 ? (
-                          <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
+                          <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_auto] lg:items-end">
                               <Field
                                 label="Move Into Chapter"
@@ -1936,7 +1938,7 @@ export function StoryOverviewView() {
                             </p>
                           </div>
                         ) : (
-                          <div className="mt-4 rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-4 text-sm text-[var(--ink-muted)]">
+                          <div className="mt-4 rounded-[6px] border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-4 text-sm text-[var(--ink-muted)]">
                             Create the first chapter when you are ready to place this
                             scene onto the spine.
                           </div>
@@ -1982,14 +1984,14 @@ export function StoryOverviewView() {
               return (
                 <article
                   key={chapter.id}
-                  className="rounded-[1.75rem] border border-black/8 bg-white/78 px-5 py-5 shadow-[0_18px_40px_rgba(38,27,16,0.07)]"
+                  className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold uppercase tracking-[0.2em] text-[var(--ink-faint)]">
                         Chapter {chapter.orderIndex + 1}
                       </p>
-                      <h3 className="mt-2 text-xl font-semibold text-[var(--ink)]">
+                      <h3 className="mt-2 text-[15px] font-semibold text-[var(--ink)]">
                         {chapter.title}
                       </h3>
                     </div>
@@ -2046,7 +2048,7 @@ export function StoryOverviewView() {
 
                   <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)]">
                     <div className="grid gap-4">
-                      <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
+                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                           Purpose
                         </p>
@@ -2055,7 +2057,7 @@ export function StoryOverviewView() {
                         </p>
                       </div>
 
-                      <div className="rounded-2xl border border-black/6 bg-white/65 px-4 py-4">
+                      <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
                           Summary
                         </p>
@@ -2065,7 +2067,7 @@ export function StoryOverviewView() {
                       </div>
 
                       {chapterDiagnosticSummary.notes.length > 0 ? (
-                        <div className="rounded-2xl border border-[color:rgba(232,191,114,0.28)] bg-[color:rgba(232,191,114,0.08)] px-4 py-4">
+                        <div className="rounded-[6px] border border-[color:rgba(215,186,125,0.22)] bg-[var(--warning-surface)] px-4 py-4">
                           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--warning)]">
                             Structure Signals
                           </p>
@@ -2127,10 +2129,12 @@ export function StoryOverviewView() {
                             return (
                               <div
                                 key={scene.id}
+                                data-story-spine-card="chapter-scene"
+                                data-scene-id={scene.id}
                                 className={cn(
-                                  "rounded-2xl border border-black/8 bg-white/72 px-4 py-3 transition-colors",
+                                  "rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 transition-colors",
                                   isUpdatingChapterScene &&
-                                    "border-[color:rgba(184,88,63,0.22)] bg-[color:rgba(184,88,63,0.06)]",
+                                    "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]",
                                 )}
                                 aria-busy={isUpdatingChapterScene}
                               >
@@ -2226,7 +2230,7 @@ export function StoryOverviewView() {
                                 </div>
 
                                 {isMovingChapterScene && chapterSceneMoveDraft ? (
-                                    <div className="mt-4 rounded-2xl border border-black/6 bg-white/72 px-4 py-4">
+                                    <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4">
                                       <div className="grid gap-3 lg:grid-cols-2">
                                       <Field
                                         label="Move Destination"
@@ -2395,7 +2399,7 @@ export function StoryOverviewView() {
                           })}
                         </div>
                       ) : (
-                        <div className="rounded-2xl border border-dashed border-black/10 bg-white/55 px-4 py-5 text-sm text-[var(--ink-muted)]">
+                        <div className="rounded-[6px] border border-dashed border-[var(--border)] bg-[var(--panel)] px-4 py-5 text-sm text-[var(--ink-muted)]">
                           No scenes are assigned to this chapter yet.
                         </div>
                       )}

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   Activity,
   BookCopy,
@@ -13,7 +13,7 @@ import {
 } from "lucide-react";
 import type { DomainEvent, ProjectSnapshot, Suggestion } from "@novelforge/domain";
 import { useShallow } from "zustand/react/shallow";
-import { Button, EmptyState, Input, Panel } from "@/components/ui";
+import { Button, EmptyState, Input, ListRow, Panel, TabButton } from "@/components/ui";
 import { normalizeProjectRoute, shouldPersistProjectRoute } from "@/lib/routes";
 import { tauriApi } from "@/lib/tauri";
 import { cn, formatRelativeTimestamp } from "@/lib/utils";
@@ -216,7 +216,7 @@ export function AppShell({
   function renderStoryBrowser() {
     if (!snapshot) {
       return (
-        <div className="rounded-2xl bg-white/6 px-4 py-5 text-sm text-white/65">
+        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-3 py-4 text-[13px] text-[var(--ink-muted)]">
           Open a project to browse chapters, scenes, characters, and suggestions in
           story order.
         </div>
@@ -229,14 +229,10 @@ export function AppShell({
           {chapters.map((chapter) => {
             const isActive = location.startsWith(`/chapters/${chapter.id}`) || activeChapterId === chapter.id;
             return (
-              <button
+              <ListRow
                 key={chapter.id}
-                className={cn(
-                  "rounded-2xl px-4 py-3 text-left transition",
-                  isActive
-                    ? "bg-white text-[var(--ink)]"
-                    : "bg-white/6 text-white/75 hover:bg-white/12 hover:text-white",
-                )}
+                active={isActive}
+                className="rounded-[4px]"
                 onClick={() => {
                   setSelectedChapterId(chapter.id);
                   void navigate({
@@ -245,12 +241,14 @@ export function AppShell({
                   });
                 }}
               >
-                <p className="text-sm font-semibold">{chapter.title}</p>
-                <p className="mt-1 text-xs opacity-75">
+                <div className="min-w-0">
+                <p className="truncate text-[13px] font-medium">{chapter.title}</p>
+                <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
                   {chapterSceneCounts[chapter.id] ?? 0} scene
                   {(chapterSceneCounts[chapter.id] ?? 0) === 1 ? "" : "s"}
                 </p>
-              </button>
+                </div>
+              </ListRow>
             );
           })}
         </div>
@@ -272,14 +270,10 @@ export function AppShell({
             const isActive = activeSceneId === scene.id;
 
             return (
-              <button
+              <ListRow
                 key={scene.id}
-                className={cn(
-                  "rounded-2xl px-4 py-3 text-left transition",
-                  isActive
-                    ? "bg-white text-[var(--ink)]"
-                    : "bg-white/6 text-white/75 hover:bg-white/12 hover:text-white",
-                )}
+                active={isActive}
+                className="rounded-[4px]"
                 onClick={() =>
                   void navigate({
                     to: "/scenes/$sceneId",
@@ -287,13 +281,15 @@ export function AppShell({
                   })
                 }
               >
-                <p className="text-sm font-semibold">{scene.title}</p>
-                <p className="mt-1 text-xs opacity-75">{chapterTitle}</p>
-              </button>
+                <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium">{scene.title}</p>
+                  <p className="mt-1 text-[11px] text-[var(--ink-faint)]">{chapterTitle}</p>
+                </div>
+              </ListRow>
             );
           })}
           {unassignedSceneCount > 0 ? (
-            <p className="px-2 text-xs uppercase tracking-[0.18em] text-white/45">
+            <p className="px-3 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
               {unassignedSceneCount} unassigned scene
               {unassignedSceneCount === 1 ? "" : "s"}
             </p>
@@ -317,24 +313,22 @@ export function AppShell({
                 location.startsWith("/characters") && selectedCharacterId === character.id;
 
               return (
-                <button
+                <ListRow
                   key={character.id}
-                  className={cn(
-                    "rounded-2xl px-4 py-3 text-left transition",
-                    isActive
-                      ? "bg-white text-[var(--ink)]"
-                      : "bg-white/6 text-white/75 hover:bg-white/12 hover:text-white",
-                  )}
+                  active={isActive}
+                  className="rounded-[4px]"
                   onClick={() => {
                     setSelectedCharacterId(character.id);
                     void navigate({ to: "/characters" });
                   }}
                 >
-                  <p className="text-sm font-semibold">{character.name}</p>
-                  <p className="mt-1 text-xs opacity-75">
+                  <div className="min-w-0">
+                  <p className="truncate text-[13px] font-medium">{character.name}</p>
+                  <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
                     {character.role || "No role set yet"}
                   </p>
-                </button>
+                  </div>
+                </ListRow>
               );
             })}
         </div>
@@ -355,16 +349,18 @@ export function AppShell({
     return orderedSuggestions.length > 0 ? (
       <div className="grid gap-2">
         {orderedSuggestions.map((suggestion) => (
-          <button
+          <ListRow
             key={suggestion.id}
-            className="rounded-2xl bg-white/6 px-4 py-3 text-left text-white/75 transition hover:bg-white/12 hover:text-white"
+            className="rounded-[4px]"
             onClick={() => void navigate({ to: "/suggestions" })}
           >
-            <p className="text-sm font-semibold">{suggestion.title}</p>
-            <p className="mt-1 text-xs uppercase tracking-[0.14em] opacity-75">
+            <div className="min-w-0">
+            <p className="truncate text-[13px] font-medium">{suggestion.title}</p>
+            <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
               {suggestion.status}
             </p>
-          </button>
+            </div>
+          </ListRow>
         ))}
       </div>
     ) : (
@@ -376,17 +372,17 @@ export function AppShell({
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] px-4 py-4 text-[var(--ink)] md:px-6">
-      <div className="grid min-h-[calc(100vh-2rem)] grid-cols-1 gap-4 lg:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="flex flex-col gap-4 rounded-[2rem] border border-white/60 bg-[color:rgba(51,37,22,0.92)] p-5 text-white shadow-[0_30px_80px_rgba(30,18,9,0.3)]">
-          <div className="rounded-3xl bg-white/8 p-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-white/50">
+    <div className="min-h-screen bg-[var(--background)] p-3 text-[var(--ink)]">
+      <div className="grid min-h-[calc(100vh-1.5rem)] grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <aside className="flex min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--sidebar-bg)]">
+          <div className="border-b border-[var(--border)] px-4 py-4">
+            <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
               Workspace
             </p>
-            <h1 className="mt-3 text-2xl font-semibold">
+            <h1 className="mt-2 text-base font-semibold text-[var(--ink)]">
               {snapshot ? snapshot.project.title : "NovelForge"}
             </h1>
-            <p className="mt-2 text-sm text-white/70">
+            <p className="mt-2 text-[13px] text-[var(--ink-muted)]">
               {snapshot
                 ? snapshot.project.logline ||
                   snapshot.project.premise ||
@@ -394,33 +390,33 @@ export function AppShell({
                 : "Local-first story workspace for chapters, scenes, characters, and structured revision support."}
             </p>
             {snapshot ? (
-              <p className="mt-4 text-xs text-white/50">
+              <p className="mt-3 text-[11px] text-[var(--ink-faint)]">
                 Last opened {formatRelativeTimestamp(snapshot.project.lastOpenedAt)}
               </p>
             ) : (
-              <p className="mt-4 text-xs text-white/50">
+              <p className="mt-3 text-[11px] text-[var(--ink-faint)]">
                 Use File to create or open a project.
               </p>
             )}
           </div>
 
-          <div className="space-y-3">
-            <p className="px-1 text-xs uppercase tracking-[0.18em] text-white/45">
+          <div className="flex min-h-0 flex-1 flex-col px-3 py-3">
+            <div className="border-b border-[var(--border)] pb-3">
+            <p className="px-1 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
               Story Browser
             </p>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="mt-2 grid grid-cols-2 gap-1">
               {storyDomainTabs.map((item) => {
                 const Icon = item.icon;
                 const isActive = storyBrowserDomain === item.domain;
                 return (
-                  <button
+                  <TabButton
                     key={item.to}
+                    active={isActive}
                     className={cn(
-                      "flex items-center gap-2 rounded-2xl px-3 py-2 text-sm font-medium transition",
-                      isActive
-                        ? "bg-white text-[var(--ink)]"
-                        : "bg-white/6 text-white/75 hover:bg-white/10 hover:text-white",
-                      !snapshot && "cursor-not-allowed opacity-60 hover:bg-white/6 hover:text-white/75",
+                      "justify-start",
+                      !snapshot &&
+                        "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-[var(--ink-muted)]",
                     )}
                     onClick={() => {
                       if (!snapshot) {
@@ -433,29 +429,30 @@ export function AppShell({
                   >
                     <Icon className="size-4" />
                     {item.label}
-                  </button>
+                  </TabButton>
                 );
               })}
             </div>
-            <div className="grid gap-2">{renderStoryBrowser()}</div>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto py-3">
+              <div className="grid gap-1">{renderStoryBrowser()}</div>
+            </div>
           </div>
 
-          <nav className="mt-auto grid gap-2">
+          <nav className="grid gap-1 border-t border-[var(--border)] px-3 py-3">
             {utilityNavigationItems.map((item) => {
               const Icon = item.icon;
               const isActive =
                 location === item.to || location.startsWith(`${item.to}/`);
               const disabled = !snapshot && item.to !== "/settings";
               return (
-                <button
+                <ListRow
                   key={item.to}
+                  active={isActive}
                   className={cn(
-                    "flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition",
-                    isActive
-                      ? "bg-white text-[var(--ink)]"
-                      : "bg-white/0 text-white/75 hover:bg-white/10 hover:text-white",
+                    "items-center rounded-[4px]",
                     disabled &&
-                      "cursor-not-allowed opacity-50 hover:bg-white/0 hover:text-white/75",
+                      "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-[var(--ink-muted)]",
                   )}
                   onClick={() => {
                     if (disabled) {
@@ -467,18 +464,19 @@ export function AppShell({
                 >
                   <Icon className="size-4" />
                   {item.label}
-                </button>
+                </ListRow>
               );
             })}
           </nav>
 
           {snapshot ? (
-            <Panel className="bg-white/10 text-white shadow-none">
+            <div className="border-t border-[var(--border)] p-3">
+            <Panel className="bg-[var(--panel-bg)] p-3">
               <div className="flex items-center gap-3">
-                <Activity className="size-4 text-[var(--sand)]" />
+                <Activity className="size-4 text-[var(--accent)]" />
                 <div>
-                  <p className="text-sm font-semibold">Analysis engine</p>
-                  <p className="text-xs text-white/65">
+                  <p className="text-[13px] font-semibold text-[var(--ink)]">Analysis Engine</p>
+                  <p className="text-[11px] text-[var(--ink-faint)]">
                     {isAnalyzing
                       ? "Reviewing recent story changes..."
                       : `${openSuggestionsCount} open suggestions`}
@@ -486,17 +484,18 @@ export function AppShell({
                 </div>
               </div>
             </Panel>
+            </div>
           ) : null}
         </aside>
 
-        <div className="flex min-h-0 flex-col gap-4">
-          <header className="grid gap-4 rounded-[2rem] border border-white/60 bg-[color:rgba(255,247,236,0.85)] p-5 shadow-[0_20px_50px_rgba(38,27,16,0.08)] backdrop-blur xl:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="flex min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--content-bg)]">
+          <header className="grid gap-3 border-b border-[var(--border)] px-4 py-3 xl:grid-cols-[minmax(0,1fr)_auto]">
             {snapshot ? (
               <>
-                <div className="flex items-center gap-3 rounded-2xl border border-black/5 bg-white/70 px-4 py-3">
+                <div className="flex items-center gap-2 rounded-[4px] border border-[var(--border)] bg-[var(--input-bg)] px-3">
                   <Search className="size-4 text-[var(--ink-faint)]" />
                   <Input
-                    className="border-none bg-transparent px-0 py-0 ring-0 focus:border-none focus:ring-0"
+                    className="border-none bg-transparent px-0 focus:border-none focus:ring-0 hover:border-transparent"
                     placeholder="Quick filter chapters, scenes, and characters"
                     value={searchText}
                     onChange={(event) => setSearchText(event.target.value)}
@@ -520,10 +519,10 @@ export function AppShell({
               </>
             ) : (
               <div className="space-y-1">
-                <h2 className="text-xl font-semibold text-[var(--ink)]">
+                <h2 className="text-[15px] font-semibold text-[var(--ink)]">
                   Structured Story Workspace
                 </h2>
-                <p className="max-w-2xl text-sm text-[var(--ink-muted)]">
+                <p className="max-w-2xl text-[13px] text-[var(--ink-muted)]">
                   Start from a local .novelforge file, then work in chapters,
                   scenes, characters, and suggestions without leaving the desktop
                   app.
@@ -532,7 +531,7 @@ export function AppShell({
             )}
           </header>
 
-          <main className="min-h-0 flex-1">{children}</main>
+          <main className="min-h-0 flex-1 overflow-hidden p-3">{children}</main>
         </div>
       </div>
       <SceneWorkspaceLeavePrompt />

@@ -43,29 +43,29 @@ function SortableChapterRow({
     <div
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`flex items-start gap-3 rounded-2xl border px-3 py-3 transition ${
+      className={`flex items-start gap-3 border-l-2 px-3 py-3 transition ${
         isSelected
-          ? "border-[color:rgba(184,88,63,0.34)] bg-[color:rgba(184,88,63,0.08)]"
-          : "border-black/8 bg-white/70 hover:border-black/15 hover:bg-white"
-      } ${isDragging ? "shadow-[0_24px_50px_rgba(38,27,16,0.16)]" : ""}`}
+          ? "border-[var(--accent)] bg-[var(--selected)]"
+          : "border-transparent hover:bg-[var(--hover)]"
+      } ${isDragging ? "bg-[var(--surface-raised)]" : ""}`}
     >
       <button
-        className="min-w-0 flex-1 rounded-xl px-1 py-1 text-left"
+        className="min-w-0 flex-1 rounded-[4px] px-1 py-1 text-left"
         onClick={onOpen}
       >
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <h3 className="text-base font-semibold text-[var(--ink)]">
+            <h3 className="text-[13px] font-medium text-[var(--ink)]">
               {chapter.title}
             </h3>
-            <p className="mt-1 text-sm text-[var(--ink-muted)]">
+            <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
               {chapter.summary || "No summary yet."}
             </p>
           </div>
           <ChevronRight className="mt-1 size-4 shrink-0 text-[var(--ink-faint)]" />
         </div>
 
-        <div className="mt-3 flex flex-wrap gap-2">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           <Badge tone="accent">
             {sceneCount} scene{sceneCount === 1 ? "" : "s"}
           </Badge>
@@ -78,7 +78,7 @@ function SortableChapterRow({
 
       <button
         type="button"
-        className="mt-1 shrink-0 rounded-xl p-2 text-[var(--ink-faint)] transition hover:bg-black/5 hover:text-[var(--ink)]"
+        className="mt-1 shrink-0 rounded-[4px] p-2 text-[var(--ink-faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]"
         aria-label={`Reorder ${chapter.title}`}
         {...attributes}
         {...listeners}
@@ -175,7 +175,7 @@ export function ChaptersView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(0,0.95fr)_minmax(320px,0.8fr)]">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(320px,0.8fr)]">
       <Panel className="min-h-0">
         <SectionHeading
           title="Chapters"
@@ -188,7 +188,7 @@ export function ChaptersView() {
           }
         />
 
-        <div className="mt-6">
+        <div className="mt-5 border-t border-[var(--border)] pt-4">
           {chapters.length === 0 ? (
             <EmptyState
               title="No chapters yet"
@@ -205,7 +205,7 @@ export function ChaptersView() {
                 items={chapters.map((chapter) => chapter.id)}
                 strategy={verticalListSortingStrategy}
               >
-                <div className="grid gap-3">
+                <div className="grid gap-1">
                   {chapters.map((chapter) => (
                     <SortableChapterRow
                       key={chapter.id}
@@ -234,15 +234,15 @@ export function ChaptersView() {
           description="Use chapter workspaces as the planning layer above scenes so structure stays visible before prose takes over."
         />
 
-        <div className="mt-6 grid gap-4">
+        <div className="mt-5 grid gap-3 border-t border-[var(--border)] pt-4">
           {selectedChapter ? (
             <>
-              <Panel className="bg-white/75 shadow-none">
-                <div className="flex items-center gap-2 text-[var(--accent-strong)]">
+              <Panel className="bg-[var(--surface-elevated)] p-3 shadow-none">
+                <div className="flex items-center gap-2 text-[var(--accent)]">
                   <BookOpen className="size-4" />
-                  <h3 className="font-semibold">Selected Chapter</h3>
+                  <h3 className="text-[13px] font-semibold">Selected Chapter</h3>
                 </div>
-                <div className="mt-3 grid gap-3 text-sm text-[var(--ink-muted)]">
+                <div className="mt-3 grid gap-3 text-[13px] text-[var(--ink-muted)]">
                   <div>
                     <p className="font-semibold text-[var(--ink)]">Summary</p>
                     <p className="mt-1">

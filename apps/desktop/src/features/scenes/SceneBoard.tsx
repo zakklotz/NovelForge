@@ -59,7 +59,7 @@ function SortableSceneCard({
       {...attributes}
       {...listeners}
       className={cn(
-        "group cursor-grab rounded-2xl border border-black/8 bg-white/90 p-4 shadow-sm transition hover:border-[color:rgba(184,88,63,0.3)] hover:shadow-md",
+        "group cursor-grab rounded-[4px] border border-[var(--border)] bg-[var(--content-bg)] p-3 transition hover:bg-[var(--surface-elevated)]",
         isDragging && "opacity-60",
       )}
       onDoubleClick={() =>
@@ -112,16 +112,16 @@ function SceneColumn({
     <section
       ref={setNodeRef}
       className={cn(
-        "flex min-h-[14rem] flex-col gap-4 rounded-[2rem] border border-white/65 bg-[var(--panel)] p-5 shadow-[0_20px_50px_rgba(38,27,16,0.08)] transition",
-        isOver && "border-[color:rgba(184,88,63,0.45)] bg-white/90",
+        "flex min-h-[14rem] flex-col gap-4 rounded-[8px] border border-[var(--border)] bg-[var(--panel)] p-4 shadow-none transition",
+        isOver && "border-[var(--accent)] bg-[var(--surface-elevated)]",
       )}
     >
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h3 className="text-lg font-semibold text-[var(--ink)]">
+          <h3 className="text-[14px] font-semibold text-[var(--ink)]">
             {column.title}
           </h3>
-          <p className="text-sm text-[var(--ink-muted)]">
+          <p className="text-[13px] text-[var(--ink-muted)]">
             {column.scenes.length} scene{column.scenes.length === 1 ? "" : "s"}
           </p>
         </div>
@@ -139,7 +139,7 @@ function SceneColumn({
         items={column.scenes.map((scene) => scene.id)}
         strategy={verticalListSortingStrategy}
       >
-        <div className="grid gap-3">
+        <div className="grid gap-1">
           {column.scenes.length > 0 ? (
             column.scenes.map((scene) => (
               <SortableSceneCard

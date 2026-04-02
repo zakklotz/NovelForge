@@ -116,17 +116,17 @@ function MessageBubble({ message }: { message: ScratchpadMessage }) {
   const isAssistant = message.role === "assistant";
   return (
     <div
-      className={`rounded-[1.75rem] px-4 py-4 ${
+      className={`rounded-[6px] border px-4 py-4 ${
         isAssistant
-          ? "bg-[color:rgba(255,248,239,0.95)] ring-1 ring-black/6"
-          : "bg-[color:rgba(184,88,63,0.12)] text-[var(--ink)]"
+          ? "border-[var(--border)] bg-[var(--panel)]"
+          : "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)] text-[var(--ink)]"
       }`}
     >
       <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
         {isAssistant ? <Bot className="size-4" /> : <User className="size-4" />}
         {isAssistant ? "NovelForge" : "You"}
       </div>
-      <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-[var(--ink)]">
+      <p className="mt-3 whitespace-pre-wrap text-[13px] leading-6 text-[var(--ink)]">
         {message.content}
       </p>
     </div>
@@ -277,14 +277,14 @@ export function ScratchpadView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
       <Panel className="min-h-0 overflow-y-auto">
         <SectionHeading
           title="Scratchpad"
           description="Paste notes, outlines, excerpts, or manuscript fragments and turn them into reviewable story structure."
         />
 
-        <div className="mt-6 grid gap-4">
+        <div className="mt-5 grid gap-4 border-t border-[var(--border)] pt-4">
           <Field label="Action">
             <Select
               value={action}
@@ -298,14 +298,14 @@ export function ScratchpadView() {
             </Select>
           </Field>
 
-          <Panel className="bg-white/70">
+          <Panel className="bg-[var(--surface-elevated)]">
             <div className="flex items-center gap-3">
-              <WandSparkles className="size-5 text-[var(--accent-strong)]" />
+              <WandSparkles className="size-5 text-[var(--accent)]" />
               <div>
-                <h3 className="text-base font-semibold text-[var(--ink)]">
+                <h3 className="text-[13px] font-semibold text-[var(--ink)]">
                   {selectedAction?.label}
                 </h3>
-                <p className="mt-1 text-sm text-[var(--ink-muted)]">
+                <p className="mt-1 text-[13px] text-[var(--ink-muted)]">
                   {selectedAction?.description}
                 </p>
               </div>
@@ -363,7 +363,7 @@ export function ScratchpadView() {
           </Field>
 
           {!hasApiKey ? (
-            <Panel className="bg-[color:rgba(194,151,57,0.14)]">
+            <Panel className="bg-[var(--warning-surface)]">
               <p className="text-sm text-[var(--warning)]">
                 Add a {providerLabels[providerId]} key in{" "}
                 <Link to="/settings" className="font-semibold underline">
@@ -376,7 +376,7 @@ export function ScratchpadView() {
 
           <Field label="Project Context" hint="Optional but useful for more grounded results">
             <div className="grid gap-3">
-              <Panel className="bg-white/70 p-4">
+              <Panel className="bg-[var(--surface-elevated)] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
                   <BookText className="size-4" />
                   Chapters
@@ -405,7 +405,7 @@ export function ScratchpadView() {
                 </div>
               </Panel>
 
-              <Panel className="bg-white/70 p-4">
+              <Panel className="bg-[var(--surface-elevated)] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
                   <ArrowRight className="size-4" />
                   Scenes
@@ -434,7 +434,7 @@ export function ScratchpadView() {
                 </div>
               </Panel>
 
-              <Panel className="bg-white/70 p-4">
+              <Panel className="bg-[var(--surface-elevated)] p-4">
                 <div className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
                   <Users className="size-4" />
                   Characters
@@ -494,7 +494,7 @@ export function ScratchpadView() {
           description="Use this space like a story workshop. The assistant only proposes structure until you apply it."
         />
 
-        <div className="mt-6 min-h-0 flex-1 space-y-4 overflow-y-auto">
+        <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto border-t border-[var(--border)] pt-4">
           {session.messages.length > 0 ? (
             session.messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
@@ -529,27 +529,27 @@ export function ScratchpadView() {
         />
 
         {error ? (
-          <Panel className="mt-4 bg-[color:rgba(174,67,45,0.1)]">
+          <Panel className="mt-4 bg-[var(--danger-surface)]">
             <p className="text-sm text-[var(--danger)]">{error}</p>
           </Panel>
         ) : null}
 
         {applyMessage ? (
-          <Panel className="mt-4 bg-[color:rgba(32,151,110,0.08)]">
-            <p className="text-sm text-[color:#0f7350]">{applyMessage}</p>
+          <Panel className="mt-4 bg-[var(--success-surface)]">
+            <p className="text-sm text-[var(--success)]">{applyMessage}</p>
           </Panel>
         ) : null}
 
         {latestResult ? (
-          <div className="mt-6 space-y-4">
-            <Panel className="bg-white/75">
-              <h3 className="text-base font-semibold text-[var(--ink)]">Summary</h3>
-              <p className="mt-2 text-sm text-[var(--ink-muted)]">
+          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-4">
+            <Panel className="bg-[var(--surface-elevated)]">
+              <h3 className="text-[13px] font-semibold text-[var(--ink)]">Summary</h3>
+              <p className="mt-2 text-[13px] text-[var(--ink-muted)]">
                 {latestResult.summary || "The assistant returned structure without a summary."}
               </p>
             </Panel>
 
-            <Panel className="bg-white/75">
+            <Panel className="bg-[var(--surface-elevated)]">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-[var(--ink)]">Chapters</h3>
                 <Badge tone="accent">{latestResult.chapters.length}</Badge>
@@ -559,7 +559,7 @@ export function ScratchpadView() {
                   latestResult.chapters.map((chapter, index) => (
                     <label
                       key={`${chapter.title}-${index}`}
-                      className="grid gap-2 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                     >
                       <span className="flex items-center gap-3">
                         <input
@@ -587,7 +587,7 @@ export function ScratchpadView() {
               </div>
             </Panel>
 
-            <Panel className="bg-white/75">
+            <Panel className="bg-[var(--surface-elevated)]">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-[var(--ink)]">Scenes</h3>
                 <Badge tone="accent">{latestResult.scenes.length}</Badge>
@@ -597,7 +597,7 @@ export function ScratchpadView() {
                   latestResult.scenes.map((scene, index) => (
                     <label
                       key={`${scene.title}-${index}`}
-                      className="grid gap-2 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                     >
                       <span className="flex items-center gap-3">
                         <input
@@ -630,7 +630,7 @@ export function ScratchpadView() {
               </div>
             </Panel>
 
-            <Panel className="bg-white/75">
+            <Panel className="bg-[var(--surface-elevated)]">
               <div className="flex items-center justify-between gap-3">
                 <h3 className="text-base font-semibold text-[var(--ink)]">Characters</h3>
                 <Badge tone="accent">{latestResult.characters.length}</Badge>
@@ -640,7 +640,7 @@ export function ScratchpadView() {
                   latestResult.characters.map((character, index) => (
                     <label
                       key={`${character.name}-${index}`}
-                      className="grid gap-2 rounded-2xl bg-white px-4 py-4 ring-1 ring-black/6"
+                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
                     >
                       <span className="flex items-center gap-3">
                         <input
@@ -668,8 +668,8 @@ export function ScratchpadView() {
               </div>
             </Panel>
 
-            <Panel className="bg-white/75">
-              <h3 className="text-base font-semibold text-[var(--ink)]">
+            <Panel className="bg-[var(--surface-elevated)]">
+              <h3 className="text-[13px] font-semibold text-[var(--ink)]">
                 Continuity Notes
               </h3>
               <ul className="mt-3 grid gap-2">
@@ -677,7 +677,7 @@ export function ScratchpadView() {
                   latestResult.continuityNotes.map((note) => (
                     <li
                       key={note}
-                      className="rounded-2xl bg-white px-4 py-3 text-sm text-[var(--ink-muted)] ring-1 ring-black/6"
+                      className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-[13px] text-[var(--ink-muted)]"
                     >
                       {note}
                     </li>

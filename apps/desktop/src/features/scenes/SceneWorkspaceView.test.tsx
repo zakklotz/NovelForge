@@ -934,7 +934,7 @@ describe("Scene workspace unsaved change protection", () => {
       throw new Error("Draft save did not start.");
     }
     await act(async () => {
-      resolveSaveManuscript();
+      resolveSaveManuscript!();
       await Promise.resolve();
       await Promise.resolve();
       await Promise.resolve();
