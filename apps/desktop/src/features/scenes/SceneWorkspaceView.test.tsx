@@ -41,7 +41,9 @@ const windowApiMock = vi.hoisted(() => {
     | null = null;
   const destroy = vi.fn();
   const onCloseRequested = vi.fn(
-    async (callback: (event: { preventDefault: () => void }) => void | Promise<void>) => {
+    async (
+      callback: (event: { preventDefault: () => void }) => void | Promise<void>,
+    ) => {
       closeRequestedHandler = callback;
       return () => {
         if (closeRequestedHandler === callback) {
@@ -150,7 +152,10 @@ vi.mock("@/lib/tauri", () => ({
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(
-    async (eventName: string, callback: (event?: unknown) => void | Promise<void>) => {
+    async (
+      eventName: string,
+      callback: (event?: unknown) => void | Promise<void>,
+    ) => {
       menuListeners.set(eventName, callback);
       return () => {
         menuListeners.delete(eventName);
@@ -174,9 +179,10 @@ vi.mock("@tauri-apps/plugin-dialog", () => ({
 vi.mock("@tiptap/react", () => ({
   useEditor: (config: {
     content?: string;
-    onUpdate?: ((payload: { editor: { getHTML: () => string } }) => void) | null;
-  }) =>
-    tiptapMock.mount(config),
+    onUpdate?:
+      | ((payload: { editor: { getHTML: () => string } }) => void)
+      | null;
+  }) => tiptapMock.mount(config),
   EditorContent: () => <div data-testid="editor-content" />,
 }));
 
@@ -212,7 +218,9 @@ describe("Scene workspace unsaved change protection", () => {
 
     tauriApiMock.restoreLastProject.mockResolvedValue(null);
     tauriApiMock.closeProject.mockResolvedValue(undefined);
-    tauriApiMock.getProjectSnapshot.mockImplementation(async () => currentSnapshot);
+    tauriApiMock.getProjectSnapshot.mockImplementation(
+      async () => currentSnapshot,
+    );
     tauriApiMock.saveScene.mockImplementation(async (input) => {
       const updatedScene = {
         ...currentSnapshot.scenes.find((scene) => scene.id === input.id)!,
@@ -253,9 +261,21 @@ describe("Scene workspace unsaved change protection", () => {
       ai: {
         defaultProvider: "gemini",
         providers: {
-          gemini: { enabled: true, hasApiKey: true, defaultModel: "gemini-2.5-flash" },
-          groq: { enabled: true, hasApiKey: false, defaultModel: "llama-3.3-70b-versatile" },
-          openrouter: { enabled: true, hasApiKey: false, defaultModel: "openrouter/free" },
+          gemini: {
+            enabled: true,
+            hasApiKey: true,
+            defaultModel: "gemini-2.5-flash",
+          },
+          groq: {
+            enabled: true,
+            hasApiKey: false,
+            defaultModel: "llama-3.3-70b-versatile",
+          },
+          openrouter: {
+            enabled: true,
+            hasApiKey: false,
+            defaultModel: "openrouter/free",
+          },
         },
       },
     });
@@ -345,7 +365,9 @@ describe("Scene workspace unsaved change protection", () => {
       target: { value: "Updated before switching scenes." },
     });
 
-    fireEvent.click(screen.getAllByRole("button", { name: /the crate speaks/i })[0]!);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /the crate speaks/i })[0]!,
+    );
 
     await screen.findByText("Unsaved scene changes");
     expect(window.location.pathname).toBe("/scenes/scene-1");
@@ -357,7 +379,9 @@ describe("Scene workspace unsaved change protection", () => {
     });
     expect(window.location.pathname).toBe("/scenes/scene-1");
 
-    fireEvent.click(screen.getAllByRole("button", { name: /the crate speaks/i })[0]!);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: /the crate speaks/i })[0]!,
+    );
     await screen.findByText("Unsaved scene changes");
     fireEvent.click(screen.getByRole("button", { name: /save changes/i }));
 
@@ -518,7 +542,8 @@ describe("Scene workspace unsaved change protection", () => {
       providerId: "gemini",
       modelId: "gemini-2.5-flash",
       action: "scene-generate-beats",
-      assistantMessage: "I tightened the beat progression around Ava's pressure.",
+      assistantMessage:
+        "I tightened the beat progression around Ava's pressure.",
       result: {
         summary: "Five beats now track the scene's pressure turn by turn.",
         sceneProposals: [],
@@ -533,7 +558,9 @@ describe("Scene workspace unsaved change protection", () => {
     await screen.findByText("Scene Frame");
 
     fireEvent.change(screen.getByLabelText(/summary/i), {
-      target: { value: "Unsaved summary context should feed the beat generation." },
+      target: {
+        value: "Unsaved summary context should feed the beat generation.",
+      },
     });
 
     fireEvent.click(screen.getByRole("button", { name: /generate beats/i }));
@@ -587,12 +614,61 @@ describe("Scene workspace unsaved change protection", () => {
     queryClient.clear();
   });
 
+  it("shows advisory beat overlap warnings and an insertion summary during review", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "scene-generate-beats",
+      assistantMessage:
+        "I tightened the opening beats around the dock exchange.",
+      result: {
+        summary: "A shorter beat pass focuses on the opening exchange.",
+        sceneProposals: [],
+        beatOutline:
+          "Ava meets the client at Dock Nine.\nThe client names a price that feels too clean.\nThe crate reacts before Ava can refuse.",
+        manuscriptText: "",
+      },
+    });
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+    const generateBeatsButton = await screen.findByRole("button", {
+      name: /generate beats/i,
+    });
+    await waitFor(() => {
+      expect((generateBeatsButton as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(generateBeatsButton);
+
+    await screen.findByText("Generated Beat Outline");
+    await screen.findByText("Some selected beats may already be covered");
+    await screen.findByText(
+      "Selected Beat 1 looks very close to current beat 1.",
+    );
+
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "after" },
+    });
+    fireEvent.change(screen.getByLabelText(/after beat/i), {
+      target: { value: "1" },
+    });
+
+    expect(
+      screen.getByText("Selected beats will be inserted after Beat 2."),
+    ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("lets the user cancel beat review without changing the current outline", async () => {
     tauriApiMock.runStructuredAiAction.mockResolvedValue({
       providerId: "gemini",
       modelId: "gemini-2.5-flash",
       action: "scene-generate-beats",
-      assistantMessage: "I tightened the beat progression around Ava's pressure.",
+      assistantMessage:
+        "I tightened the beat progression around Ava's pressure.",
       result: {
         summary: "Five beats now track the scene's pressure turn by turn.",
         sceneProposals: [],
@@ -629,9 +705,57 @@ describe("Scene workspace unsaved change protection", () => {
     await waitFor(() => {
       expect(screen.queryByText("Generated Beat Outline")).toBeNull();
     });
-    expect((screen.getByLabelText(/beat outline/i) as HTMLTextAreaElement).value).toBe(
+    expect(
+      (screen.getByLabelText(/beat outline/i) as HTMLTextAreaElement).value,
+    ).toBe(
       "Ava meets the client at Dock Nine.\nThe crate reacts to her touch.\nShe takes the job even though the setup feels wrong.",
     );
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("shows advisory draft overlap warnings and an insertion summary during review", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "scene-expand-draft",
+      assistantMessage: "I expanded the opening into a tighter rough draft.",
+      result: {
+        summary: "A tighter rough draft is ready for review.",
+        sceneProposals: [],
+        beatOutline: "",
+        manuscriptText:
+          "<p>Ava hated jobs that breathed.</p><p>The guard studied her papers long enough to invite the lie.</p>",
+      },
+    });
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+    const expandDraftButton = await screen.findByRole("button", {
+      name: /expand to draft/i,
+    });
+    await waitFor(() => {
+      expect((expandDraftButton as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(expandDraftButton);
+
+    await screen.findByText("Rough Draft Review");
+    await screen.findByText(
+      "Some selected draft blocks may already be covered",
+    );
+    await screen.findByText(
+      "Selected Block 1 looks very close to current block 1.",
+    );
+
+    fireEvent.change(screen.getByLabelText(/insert position/i), {
+      target: { value: "after" },
+    });
+
+    expect(
+      screen.getByText("Selected draft blocks will be inserted after Block 1."),
+    ).toBeTruthy();
 
     unmount();
     queryClient.clear();
@@ -683,9 +807,7 @@ describe("Scene workspace unsaved change protection", () => {
     expect(
       screen.getByRole("option", { name: /at draft beginning/i }),
     ).toBeTruthy();
-    expect(
-      screen.getByRole("option", { name: /at draft end/i }),
-    ).toBeTruthy();
+    expect(screen.getByRole("option", { name: /at draft end/i })).toBeTruthy();
     vi.useFakeTimers();
     fireEvent.click(screen.getByRole("checkbox", { name: /block 1/i }));
     fireEvent.change(screen.getByLabelText(/insert position/i), {
@@ -712,6 +834,113 @@ describe("Scene workspace unsaved change protection", () => {
       manuscriptText:
         "<p>Ava hated jobs that breathed.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p><p>The crate pulsed once under her hand.</p>",
     });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("keeps the draft review panel visible and locked while an applied draft is autosaving", async () => {
+    tauriApiMock.runStructuredAiAction.mockResolvedValue({
+      providerId: "gemini",
+      modelId: "gemini-2.5-flash",
+      action: "scene-expand-draft",
+      assistantMessage: "I expanded the beats into a short rough draft.",
+      result: {
+        summary: "A compact rough draft is ready for the scene workspace.",
+        sceneProposals: [],
+        beatOutline: "",
+        manuscriptText:
+          "<p>Ava counted the checkpoint lamps before she let herself breathe.</p><p>When the guard took the papers a second time, she smiled too fast and committed to the lie.</p>",
+      },
+    });
+
+    let resolveSaveManuscript: (() => void) | undefined;
+    tauriApiMock.saveManuscript.mockImplementationOnce(
+      async ({ sceneId, manuscriptText }) => {
+        await new Promise<void>((resolve) => {
+          resolveSaveManuscript = resolve;
+        });
+
+        const updatedScene = {
+          ...currentSnapshot.scenes.find((scene) => scene.id === sceneId)!,
+          manuscriptText,
+        };
+        currentSnapshot = {
+          ...currentSnapshot,
+          scenes: currentSnapshot.scenes.map((scene) =>
+            scene.id === sceneId ? updatedScene : scene,
+          ),
+        };
+        return updatedScene;
+      },
+    );
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    await screen.findByText("Scene Frame");
+    const expandDraftButton = await screen.findByRole("button", {
+      name: /expand to draft/i,
+    });
+    await waitFor(() => {
+      expect((expandDraftButton as HTMLButtonElement).disabled).toBe(false);
+    });
+    fireEvent.click(expandDraftButton);
+    await screen.findByText("Rough Draft Review");
+
+    vi.useFakeTimers();
+    fireEvent.click(
+      screen.getByRole("button", { name: /replace with selected draft/i }),
+    );
+
+    expect(
+      screen.getByText(
+        "Applying selected draft to the editor. Review controls stay locked until autosave finishes.",
+      ),
+    ).toBeTruthy();
+
+    expect(
+      (screen.getByRole("button", { name: /^cancel$/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: /applying/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("button", { name: /select all/i }) as HTMLButtonElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (screen.getByRole("checkbox", { name: /block 1/i }) as HTMLInputElement)
+        .disabled,
+    ).toBe(true);
+    expect(
+      (
+        screen.getByRole("button", {
+          name: /expand to draft/i,
+        }) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1200);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(tauriApiMock.saveManuscript).toHaveBeenCalled();
+
+    if (!resolveSaveManuscript) {
+      throw new Error("Draft save did not start.");
+    }
+    await act(async () => {
+      resolveSaveManuscript();
+      await Promise.resolve();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByText("Rough Draft Review")).toBeNull();
 
     unmount();
     queryClient.clear();

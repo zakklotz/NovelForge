@@ -94,11 +94,11 @@ function buildStoryOrderedScenes(snapshot: ProjectSnapshot) {
     const leftChapterOrder =
       left.chapterId === null
         ? Number.MAX_SAFE_INTEGER
-        : chapterOrder.get(left.chapterId) ?? Number.MAX_SAFE_INTEGER;
+        : (chapterOrder.get(left.chapterId) ?? Number.MAX_SAFE_INTEGER);
     const rightChapterOrder =
       right.chapterId === null
         ? Number.MAX_SAFE_INTEGER
-        : chapterOrder.get(right.chapterId) ?? Number.MAX_SAFE_INTEGER;
+        : (chapterOrder.get(right.chapterId) ?? Number.MAX_SAFE_INTEGER);
 
     return (
       leftChapterOrder - rightChapterOrder ||
@@ -146,7 +146,10 @@ function arePlanningStatesEqual(
     left.location === right.location &&
     left.timeLabel === right.timeLabel &&
     left.povCharacterId === right.povCharacterId &&
-    areListsEqual(splitCommaSeparated(left.continuityTags), splitCommaSeparated(right.continuityTags)) &&
+    areListsEqual(
+      splitCommaSeparated(left.continuityTags),
+      splitCommaSeparated(right.continuityTags),
+    ) &&
     areListsEqual(left.involvedCharacterIds, right.involvedCharacterIds) &&
     areListsEqual(left.dependencySceneIds, right.dependencySceneIds)
   );
@@ -160,12 +163,15 @@ function getPlanningChangedFields(
     planning.title !== persistedPlanning.title ? "title" : null,
     planning.summary !== persistedPlanning.summary ? "summary" : null,
     planning.purpose !== persistedPlanning.purpose ? "purpose" : null,
-    planning.beatOutline !== persistedPlanning.beatOutline ? "beatOutline" : null,
+    planning.beatOutline !== persistedPlanning.beatOutline
+      ? "beatOutline"
+      : null,
     planning.conflict !== persistedPlanning.conflict ? "conflict" : null,
     planning.outcome !== persistedPlanning.outcome ? "outcome" : null,
     planning.location !== persistedPlanning.location ? "location" : null,
     planning.timeLabel !== persistedPlanning.timeLabel ? "timeLabel" : null,
-    (planning.povCharacterId || null) !== (persistedPlanning.povCharacterId || null)
+    (planning.povCharacterId || null) !==
+    (persistedPlanning.povCharacterId || null)
       ? "povCharacterId"
       : null,
     !areListsEqual(
@@ -216,7 +222,12 @@ function buildSceneWorkspaceAiContext(
   scene: Scene,
   planning: ScenePlanningState,
   draft: string,
-  chapter: { id: string; title: string; summary: string; purpose: string } | null,
+  chapter: {
+    id: string;
+    title: string;
+    summary: string;
+    purpose: string;
+  } | null,
   chapterScenes: Array<{
     id: string;
     orderIndex: number;
@@ -261,13 +272,18 @@ function buildSceneWorkspaceAiContext(
 
 function getHtmlTextContent(value: string) {
   if (typeof DOMParser === "undefined") {
-    return value.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+    return value
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
   }
 
-  return new DOMParser()
-    .parseFromString(value, "text/html")
-    .body.textContent?.replace(/\s+/g, " ")
-    .trim() ?? "";
+  return (
+    new DOMParser()
+      .parseFromString(value, "text/html")
+      .body.textContent?.replace(/\s+/g, " ")
+      .trim() ?? ""
+  );
 }
 
 function isBlankHtml(value: string) {
@@ -319,6 +335,13 @@ function prependDraftHtml(current: string, incoming: string) {
 interface DraftReviewBlock {
   html: string;
   text: string;
+}
+
+interface SceneReviewOverlapWarning {
+  incomingIndex: number;
+  currentIndex: number;
+  severity: "duplicate" | "overlap";
+  reason: string;
 }
 
 interface SceneReviewInsertState {
@@ -394,7 +417,11 @@ function insertItemsAtPosition<Item>(
     }
     case "after": {
       const nextItems = [...currentItems];
-      nextItems.splice(normalizedInsertState.anchorIndex + 1, 0, ...incomingItems);
+      nextItems.splice(
+        normalizedInsertState.anchorIndex + 1,
+        0,
+        ...incomingItems,
+      );
       return nextItems;
     }
   }
@@ -549,6 +576,168 @@ function buildInsertAnchorLabel(
   return `${itemLabel} ${index + 1}: ${preview}`;
 }
 
+function normalizeReviewComparisonText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function buildReviewComparisonTerms(value: string) {
+  return Array.from(
+    new Set(
+      normalizeReviewComparisonText(value)
+        .split(" ")
+        .filter((term) => term.length >= 4),
+    ),
+  );
+}
+
+function buildSceneReviewOverlapWarnings(
+  itemLabel: "Beat" | "Block",
+  incomingItems: string[],
+  currentItems: string[],
+  selectedIndexes: number[],
+) {
+  const selectedIndexSet = new Set(selectedIndexes);
+
+  return incomingItems
+    .map((incomingItem, incomingIndex): SceneReviewOverlapWarning | null => {
+      if (!selectedIndexSet.has(incomingIndex)) {
+        return null;
+      }
+
+      const normalizedIncoming = normalizeReviewComparisonText(incomingItem);
+      const incomingTerms = buildReviewComparisonTerms(incomingItem);
+      if (!normalizedIncoming) {
+        return null;
+      }
+
+      const bestMatch = currentItems.reduce<{
+        warning: SceneReviewOverlapWarning;
+        sharedTermCount: number;
+        overlapRatio: number;
+      } | null>((currentBest, currentItem, currentIndex) => {
+        const normalizedCurrent = normalizeReviewComparisonText(currentItem);
+        if (!normalizedCurrent) {
+          return currentBest;
+        }
+
+        const currentTerms = buildReviewComparisonTerms(currentItem);
+        const sharedTerms = incomingTerms.filter((term) =>
+          currentTerms.includes(term),
+        );
+        const overlapRatio =
+          sharedTerms.length /
+          Math.max(Math.min(incomingTerms.length, currentTerms.length), 1);
+        const looksDuplicate =
+          normalizedIncoming === normalizedCurrent ||
+          (Math.min(normalizedIncoming.length, normalizedCurrent.length) >=
+            24 &&
+            (normalizedIncoming.includes(normalizedCurrent) ||
+              normalizedCurrent.includes(normalizedIncoming)));
+
+        const warning = looksDuplicate
+          ? {
+              incomingIndex,
+              currentIndex,
+              severity: "duplicate" as const,
+              reason: `Selected ${itemLabel} ${incomingIndex + 1} looks very close to current ${itemLabel.toLowerCase()} ${currentIndex + 1}.`,
+            }
+          : sharedTerms.length >= 3 && overlapRatio >= 0.55
+            ? {
+                incomingIndex,
+                currentIndex,
+                severity: "overlap" as const,
+                reason: `Selected ${itemLabel} ${incomingIndex + 1} may overlap with current ${itemLabel.toLowerCase()} ${currentIndex + 1} around ${sharedTerms
+                  .slice(0, 3)
+                  .join(", ")}.`,
+              }
+            : null;
+
+        if (!warning) {
+          return currentBest;
+        }
+
+        if (!currentBest) {
+          return {
+            warning,
+            sharedTermCount: sharedTerms.length,
+            overlapRatio,
+          };
+        }
+
+        if (
+          currentBest.warning.severity === "overlap" &&
+          warning.severity === "duplicate"
+        ) {
+          return {
+            warning,
+            sharedTermCount: sharedTerms.length,
+            overlapRatio,
+          };
+        }
+
+        if (
+          currentBest.warning.severity === warning.severity &&
+          (sharedTerms.length > currentBest.sharedTermCount ||
+            (sharedTerms.length === currentBest.sharedTermCount &&
+              overlapRatio > currentBest.overlapRatio))
+        ) {
+          return {
+            warning,
+            sharedTermCount: sharedTerms.length,
+            overlapRatio,
+          };
+        }
+
+        return currentBest;
+      }, null);
+
+      return bestMatch?.warning ?? null;
+    })
+    .filter((warning): warning is SceneReviewOverlapWarning => Boolean(warning))
+    .sort((left, right) =>
+      left.severity === right.severity
+        ? left.incomingIndex - right.incomingIndex ||
+          left.currentIndex - right.currentIndex
+        : left.severity === "duplicate"
+          ? -1
+          : 1,
+    );
+}
+
+function buildSceneReviewInsertSummary({
+  contentLabel,
+  scopeLabel,
+  anchorLabel,
+  insertState,
+  currentItemCount,
+}: {
+  contentLabel: string;
+  scopeLabel: string;
+  anchorLabel: string;
+  insertState: SceneReviewInsertState;
+  currentItemCount: number;
+}) {
+  const normalizedInsertState = normalizeSceneReviewInsertState(
+    insertState,
+    currentItemCount,
+  );
+
+  switch (normalizedInsertState.position) {
+    case "start":
+      return `${contentLabel} will be inserted at the beginning of the ${scopeLabel}.`;
+    case "end":
+      return `${contentLabel} will be inserted at the end of the ${scopeLabel}.`;
+    case "before":
+      return `${contentLabel} will be inserted before ${anchorLabel} ${normalizedInsertState.anchorIndex + 1}.`;
+    case "after":
+      return `${contentLabel} will be inserted after ${anchorLabel} ${normalizedInsertState.anchorIndex + 1}.`;
+  }
+}
+
 export function SceneWorkspaceView() {
   const navigate = useNavigate();
   const { sceneId } = useParams({ from: "/scenes/$sceneId" });
@@ -557,7 +746,9 @@ export function SceneWorkspaceView() {
   const { runStructuredAiAction } = useAiRuntime();
   const { saveScene, saveManuscript } = useProjectRuntime();
   const setWorkspaceSession = useUiStore((state) => state.setWorkspaceSession);
-  const diagnosticJumpHighlight = useUiStore((state) => state.diagnosticJumpHighlight);
+  const diagnosticJumpHighlight = useUiStore(
+    (state) => state.diagnosticJumpHighlight,
+  );
   const setDiagnosticJumpHighlight = useUiStore(
     (state) => state.setDiagnosticJumpHighlight,
   );
@@ -565,31 +756,43 @@ export function SceneWorkspaceView() {
   const appSettings = appSettingsQuery.data;
 
   const scene = snapshot?.scenes.find((item) => item.id === sceneId);
-  const [workspaceTab, setWorkspaceTab] = useState<SceneWorkspaceTab>("overview");
+  const [workspaceTab, setWorkspaceTab] =
+    useState<SceneWorkspaceTab>("overview");
   const [planning, setPlanning] = useState<ScenePlanningState>(() =>
     scene ? buildScenePlanningState(scene) : emptyPlanningState(),
   );
-  const [persistedPlanning, setPersistedPlanning] = useState<ScenePlanningState>(() =>
-    scene ? buildScenePlanningState(scene) : emptyPlanningState(),
-  );
+  const [persistedPlanning, setPersistedPlanning] =
+    useState<ScenePlanningState>(() =>
+      scene ? buildScenePlanningState(scene) : emptyPlanningState(),
+    );
   const [draft, setDraft] = useState(scene?.manuscriptText ?? "<p></p>");
   const [persistedDraft, setPersistedDraft] = useState(
     scene?.manuscriptText ?? "<p></p>",
   );
   const [isDraftPersisting, setIsDraftPersisting] = useState(false);
   const [isSavingWorkspace, setIsSavingWorkspace] = useState(false);
-  const [beatReview, setBeatReview] = useState<StructuredAiResponse | null>(null);
-  const [draftReview, setDraftReview] = useState<StructuredAiResponse | null>(null);
+  const [beatReview, setBeatReview] = useState<StructuredAiResponse | null>(
+    null,
+  );
+  const [draftReview, setDraftReview] = useState<StructuredAiResponse | null>(
+    null,
+  );
   const [selectedBeatIndexes, setSelectedBeatIndexes] = useState<number[]>([]);
-  const [beatInsertState, setBeatInsertState] = useState<SceneReviewInsertState>({
-    ...defaultSceneReviewInsertState,
-  });
+  const [beatInsertState, setBeatInsertState] =
+    useState<SceneReviewInsertState>({
+      ...defaultSceneReviewInsertState,
+    });
   const [selectedDraftBlockIndexes, setSelectedDraftBlockIndexes] = useState<
     number[]
   >([]);
-  const [draftInsertState, setDraftInsertState] = useState<SceneReviewInsertState>({
-    ...defaultSceneReviewInsertState,
-  });
+  const [draftInsertState, setDraftInsertState] =
+    useState<SceneReviewInsertState>({
+      ...defaultSceneReviewInsertState,
+    });
+  const [draftReviewApplyState, setDraftReviewApplyState] = useState<{
+    mode: "replace" | "insert";
+    hasStarted: boolean;
+  } | null>(null);
   const [sceneAiError, setSceneAiError] = useState<string | null>(null);
   const [isGeneratingBeats, setIsGeneratingBeats] = useState(false);
   const [isGeneratingDraft, setIsGeneratingDraft] = useState(false);
@@ -640,6 +843,7 @@ export function SceneWorkspaceView() {
     setBeatInsertState(defaultSceneReviewInsertState);
     setSelectedDraftBlockIndexes([]);
     setDraftInsertState(defaultSceneReviewInsertState);
+    setDraftReviewApplyState(null);
     setSceneAiError(null);
   }, [scene?.id]);
 
@@ -665,7 +869,9 @@ export function SceneWorkspaceView() {
         : nextPlanning,
     );
     setPersistedDraft((currentDraft) =>
-      currentDraft === scene.manuscriptText ? currentDraft : scene.manuscriptText,
+      currentDraft === scene.manuscriptText
+        ? currentDraft
+        : scene.manuscriptText,
     );
   }, [scene]);
 
@@ -678,6 +884,41 @@ export function SceneWorkspaceView() {
     planningDirty ? "planning" : null,
     draftDirty ? "draft" : null,
   ].filter((value): value is "planning" | "draft" => Boolean(value));
+
+  useEffect(() => {
+    if (
+      !draftReviewApplyState ||
+      draftReviewApplyState.hasStarted ||
+      !isDraftPersisting
+    ) {
+      return;
+    }
+
+    setDraftReviewApplyState((currentState) =>
+      currentState ? { ...currentState, hasStarted: true } : currentState,
+    );
+  }, [draftReviewApplyState, isDraftPersisting]);
+
+  useEffect(() => {
+    if (!draftReviewApplyState) {
+      return;
+    }
+
+    if (!draftDirty && !isDraftPersisting) {
+      setDraftReview(null);
+      setSelectedDraftBlockIndexes([]);
+      setDraftInsertState(defaultSceneReviewInsertState);
+      setDraftReviewApplyState(null);
+      return;
+    }
+
+    if (draftReviewApplyState.hasStarted && !isDraftPersisting) {
+      setDraftReview(null);
+      setSelectedDraftBlockIndexes([]);
+      setDraftInsertState(defaultSceneReviewInsertState);
+      setDraftReviewApplyState(null);
+    }
+  }, [draftDirty, draftReviewApplyState, isDraftPersisting]);
 
   function updatePlanningField<Key extends keyof ScenePlanningState>(
     key: Key,
@@ -777,17 +1018,14 @@ export function SceneWorkspaceView() {
       try {
         if (planningDirty) {
           await waitForDraftPersistenceToSettle();
-          await saveScene(
-            buildSceneSaveInput(currentScene, planning, draft),
-            {
-              id: crypto.randomUUID(),
-              projectId: currentScene.projectId,
-              occurredAt: new Date().toISOString(),
-              type: "scene.updated",
-              sceneId: currentScene.id,
-              changedFields: planningChangedFields,
-            },
-          );
+          await saveScene(buildSceneSaveInput(currentScene, planning, draft), {
+            id: crypto.randomUUID(),
+            projectId: currentScene.projectId,
+            occurredAt: new Date().toISOString(),
+            type: "scene.updated",
+            sceneId: currentScene.id,
+            changedFields: planningChangedFields,
+          });
           return;
         }
 
@@ -814,7 +1052,9 @@ export function SceneWorkspaceView() {
 
     const nextPlanning = persistedPlanning;
     const nextDraft = persistedDraft;
-    const shouldRestorePersistedDraft = Boolean(activeDraftSavePromiseRef.current);
+    const shouldRestorePersistedDraft = Boolean(
+      activeDraftSavePromiseRef.current,
+    );
 
     queuedDraftRef.current = null;
     await waitForDraftPersistenceToSettle();
@@ -848,12 +1088,7 @@ export function SceneWorkspaceView() {
       saveChanges: saveCurrentWorkspaceChanges,
       discardChanges: discardCurrentWorkspaceChanges,
     });
-  }, [
-    dirtyAreas,
-    planning.title,
-    scene,
-    setWorkspaceSession,
-  ]);
+  }, [dirtyAreas, planning.title, scene, setWorkspaceSession]);
 
   useLayoutEffect(() => {
     if (!scene) {
@@ -908,7 +1143,9 @@ export function SceneWorkspaceView() {
   }
 
   const currentScene = scene;
-  const chapter = snapshot.chapters.find((item) => item.id === currentScene.chapterId);
+  const chapter = snapshot.chapters.find(
+    (item) => item.id === currentScene.chapterId,
+  );
   const relatedCharacters = snapshot.characters.filter(
     (character) =>
       planning.involvedCharacterIds.includes(character.id) ||
@@ -923,7 +1160,9 @@ export function SceneWorkspaceView() {
     .sort((left, right) => left.orderIndex - right.orderIndex);
   const storyOrderedScenes = buildStoryOrderedScenes(snapshot);
   const chapterById = new Map(snapshot.chapters.map((item) => [item.id, item]));
-  const scenePosition = chapterScenes.findIndex((item) => item.id === currentScene.id);
+  const scenePosition = chapterScenes.findIndex(
+    (item) => item.id === currentScene.id,
+  );
   const structuralPrompts = [
     planning.purpose
       ? `Scene purpose: ${planning.purpose}`
@@ -975,17 +1214,55 @@ export function SceneWorkspaceView() {
   const proposedDraftBlocks = getDraftReviewBlocks(
     draftReview?.result.manuscriptText ?? "",
   );
+  const beatOverlapWarnings = buildSceneReviewOverlapWarnings(
+    "Beat",
+    proposedBeatLines,
+    currentBeatLines,
+    selectedBeatIndexes,
+  );
+  const draftOverlapWarnings =
+    draftReviewApplyState === null
+      ? buildSceneReviewOverlapWarnings(
+          "Block",
+          proposedDraftBlocks.map((block) => block.text),
+          currentDraftBlocks.map((block) => block.text),
+          selectedDraftBlockIndexes,
+        )
+      : [];
   const selectedDraftHtml = buildSelectedDraftHtml(
     proposedDraftBlocks,
     selectedDraftBlockIndexes,
   );
-  const selectedDraftBlockCount = getDraftReviewBlocks(selectedDraftHtml).length;
+  const selectedDraftBlockCount =
+    getDraftReviewBlocks(selectedDraftHtml).length;
   const currentDraftText = getHtmlTextContent(draft);
   const selectedDraftText = getHtmlTextContent(selectedDraftHtml);
   const currentDraftWordCount = countWords(currentDraftText);
   const selectedDraftWordCount = countWords(selectedDraftText);
   const canInsertBeats = Boolean(selectedBeatOutline);
   const canInsertDraft = !isBlankHtml(selectedDraftHtml);
+  const beatInsertSummary = buildSceneReviewInsertSummary({
+    contentLabel: selectedBeatCount === 1 ? "Selected beat" : "Selected beats",
+    scopeLabel: "outline",
+    anchorLabel: "Beat",
+    insertState: normalizedBeatInsertState,
+    currentItemCount: currentBeatLines.length,
+  });
+  const draftInsertSummary = buildSceneReviewInsertSummary({
+    contentLabel:
+      selectedDraftBlockCount === 1
+        ? "Selected draft block"
+        : "Selected draft blocks",
+    scopeLabel: "draft",
+    anchorLabel: "Block",
+    insertState: normalizedDraftInsertState,
+    currentItemCount: currentDraftBlocks.length,
+  });
+  const isDraftReviewApplyPending = draftReviewApplyState !== null;
+  const draftApplyStatusLabel =
+    draftReviewApplyState?.mode === "replace"
+      ? "Applying selected draft to the editor. Review controls stay locked until autosave finishes."
+      : "Inserting selected draft blocks into the editor. Review controls stay locked until autosave finishes.";
 
   async function handleSaveMetadata() {
     if (!planningDirty) {
@@ -1079,7 +1356,11 @@ export function SceneWorkspaceView() {
   }
 
   async function handleExpandDraft() {
-    if (!defaultProviderId || !defaultModelId.trim() || !planning.beatOutline.trim()) {
+    if (
+      !defaultProviderId ||
+      !defaultModelId.trim() ||
+      !planning.beatOutline.trim()
+    ) {
       return;
     }
 
@@ -1087,6 +1368,7 @@ export function SceneWorkspaceView() {
     setSceneAiError(null);
     setDraftReview(null);
     setSelectedDraftBlockIndexes([]);
+    setDraftReviewApplyState(null);
 
     try {
       const response = await runStructuredAiAction({
@@ -1118,7 +1400,9 @@ export function SceneWorkspaceView() {
 
       setDraftReview(response);
       setSelectedDraftBlockIndexes(
-        getDraftReviewBlocks(response.result.manuscriptText).map((_, index) => index),
+        getDraftReviewBlocks(response.result.manuscriptText).map(
+          (_, index) => index,
+        ),
       );
       setDraftInsertState(defaultSceneReviewInsertState);
       setWorkspaceTab("draft");
@@ -1137,21 +1421,24 @@ export function SceneWorkspaceView() {
     setDraftReview(null);
     setSelectedDraftBlockIndexes([]);
     setDraftInsertState(defaultSceneReviewInsertState);
+    setDraftReviewApplyState(null);
   }
 
   function handleApplyDraft(mode: "replace" | "insert" = "replace") {
+    if (isDraftReviewApplyPending) {
+      return;
+    }
+
     const generatedDraft = selectedDraftHtml || "<p></p>";
     const nextDraft =
       mode === "insert"
         ? insertDraftHtml(draft, generatedDraft, normalizedDraftInsertState)
         : generatedDraft;
+    setDraftReviewApplyState({ mode, hasStarted: false });
     setDraft(nextDraft);
     if (editor && editor.getHTML() !== nextDraft) {
       editor.commands.setContent(nextDraft, false);
     }
-    setDraftReview(null);
-    setSelectedDraftBlockIndexes([]);
-    setDraftInsertState(defaultSceneReviewInsertState);
     setWorkspaceTab("draft");
   }
 
@@ -1194,7 +1481,9 @@ export function SceneWorkspaceView() {
           <Field label="Title">
             <Input
               value={planning.title}
-              onChange={(event) => updatePlanningField("title", event.target.value)}
+              onChange={(event) =>
+                updatePlanningField("title", event.target.value)
+              }
             />
           </Field>
           <Field label="Story Slot">
@@ -1257,12 +1546,17 @@ export function SceneWorkspaceView() {
                 >
                   <input
                     type="checkbox"
-                    checked={planning.involvedCharacterIds.includes(character.id)}
+                    checked={planning.involvedCharacterIds.includes(
+                      character.id,
+                    )}
                     onChange={(event) =>
                       setPlanning((currentPlanning) => ({
                         ...currentPlanning,
                         involvedCharacterIds: event.target.checked
-                          ? [...currentPlanning.involvedCharacterIds, character.id]
+                          ? [
+                              ...currentPlanning.involvedCharacterIds,
+                              character.id,
+                            ]
                           : currentPlanning.involvedCharacterIds.filter(
                               (value) => value !== character.id,
                             ),
@@ -1291,12 +1585,17 @@ export function SceneWorkspaceView() {
                       <span className="flex items-center gap-2">
                         <input
                           type="checkbox"
-                          checked={planning.dependencySceneIds.includes(candidate.id)}
+                          checked={planning.dependencySceneIds.includes(
+                            candidate.id,
+                          )}
                           onChange={(event) =>
                             setPlanning((currentPlanning) => ({
                               ...currentPlanning,
                               dependencySceneIds: event.target.checked
-                                ? [...currentPlanning.dependencySceneIds, candidate.id]
+                                ? [
+                                    ...currentPlanning.dependencySceneIds,
+                                    candidate.id,
+                                  ]
                                 : currentPlanning.dependencySceneIds.filter(
                                     (value) => value !== candidate.id,
                                   ),
@@ -1306,7 +1605,9 @@ export function SceneWorkspaceView() {
                         {candidate.title}
                       </span>
                       <span className="pl-6 text-xs text-[var(--ink-faint)]">
-                        {candidateChapter ? candidateChapter.title : "Unassigned"}
+                        {candidateChapter
+                          ? candidateChapter.title
+                          : "Unassigned"}
                       </span>
                     </label>
                   );
@@ -1341,7 +1642,12 @@ export function SceneWorkspaceView() {
               <Button
                 variant="secondary"
                 onClick={() => void handleExpandDraft()}
-                disabled={!hasConfiguredAi || !planning.beatOutline.trim() || isGeneratingDraft}
+                disabled={
+                  !hasConfiguredAi ||
+                  !planning.beatOutline.trim() ||
+                  isGeneratingDraft ||
+                  isDraftReviewApplyPending
+                }
               >
                 {isGeneratingDraft ? (
                   <RefreshCw className="size-4 animate-spin" />
@@ -1382,8 +1688,8 @@ export function SceneWorkspaceView() {
         {!hasConfiguredAi ? (
           <Panel className="mt-4 bg-[color:rgba(194,151,57,0.12)] shadow-none">
             <p className="text-sm text-[var(--warning)]">
-              Add a default AI provider and API key in Settings to generate beats or
-              rough draft prose from this scene workspace.
+              Add a default AI provider and API key in Settings to generate
+              beats or rough draft prose from this scene workspace.
             </p>
           </Panel>
         ) : null}
@@ -1400,7 +1706,9 @@ export function SceneWorkspaceView() {
               <Textarea
                 className="min-h-28"
                 value={planning.summary}
-                onChange={(event) => updatePlanningField("summary", event.target.value)}
+                onChange={(event) =>
+                  updatePlanningField("summary", event.target.value)
+                }
                 placeholder="What happens in this scene at a high level?"
               />
             </Field>
@@ -1408,7 +1716,9 @@ export function SceneWorkspaceView() {
               <Textarea
                 className="min-h-32"
                 value={planning.purpose}
-                onChange={(event) => updatePlanningField("purpose", event.target.value)}
+                onChange={(event) =>
+                  updatePlanningField("purpose", event.target.value)
+                }
                 placeholder="Why does this scene exist in the story?"
               />
             </Field>
@@ -1416,7 +1726,9 @@ export function SceneWorkspaceView() {
               <Textarea
                 className="min-h-32"
                 value={planning.outcome}
-                onChange={(event) => updatePlanningField("outcome", event.target.value)}
+                onChange={(event) =>
+                  updatePlanningField("outcome", event.target.value)
+                }
                 placeholder="What changes by the end of the scene?"
               />
             </Field>
@@ -1424,7 +1736,9 @@ export function SceneWorkspaceView() {
               <Textarea
                 className="min-h-32"
                 value={planning.conflict}
-                onChange={(event) => updatePlanningField("conflict", event.target.value)}
+                onChange={(event) =>
+                  updatePlanningField("conflict", event.target.value)
+                }
                 placeholder="What pressure, opposition, or contradiction drives the scene?"
               />
             </Field>
@@ -1482,10 +1796,31 @@ export function SceneWorkspaceView() {
                 />
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
-                  Current beats stay untouched while you review. Choose the beats you
-                  want, then insert them where they belong or replace using only the
-                  checked lines.
+                  Current beats stay untouched while you review. Choose the
+                  beats you want, then insert them where they belong or replace
+                  using only the checked lines.
                 </div>
+
+                {beatOverlapWarnings.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
+                      <div className="grid gap-1 text-sm">
+                        <p className="font-semibold text-[var(--warning)]">
+                          Some selected beats may already be covered
+                        </p>
+                        {beatOverlapWarnings.map((warning) => (
+                          <p
+                            key={`beat-overlap-${warning.incomingIndex}-${warning.currentIndex}`}
+                            className="text-[var(--ink-muted)]"
+                          >
+                            {warning.reason}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
                 <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
                   <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
@@ -1495,7 +1830,8 @@ export function SceneWorkspaceView() {
                         onChange={(event) =>
                           setBeatInsertState((currentState) => ({
                             ...currentState,
-                            position: event.target.value as SceneReviewInsertPosition,
+                            position: event.target
+                              .value as SceneReviewInsertPosition,
                           }))
                         }
                       >
@@ -1546,32 +1882,44 @@ export function SceneWorkspaceView() {
                   </div>
 
                   <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                    Insert the checked beats into the current outline at the chosen
-                    position without replacing the rest.
+                    {beatInsertSummary}
+                  </p>
+                  <p className="mt-1 text-sm text-[var(--ink-faint)]">
+                    Insert the checked beats into the current outline at the
+                    chosen position without replacing the rest.
                   </p>
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
                   <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-[var(--ink)]">Current Beat Outline</p>
-                      <Badge>{currentBeatLines.length} beat{currentBeatLines.length === 1 ? "" : "s"}</Badge>
+                      <p className="font-semibold text-[var(--ink)]">
+                        Current Beat Outline
+                      </p>
+                      <Badge>
+                        {currentBeatLines.length} beat
+                        {currentBeatLines.length === 1 ? "" : "s"}
+                      </Badge>
                     </div>
                     <p className="mt-3 whitespace-pre-wrap">
-                      {planning.beatOutline.trim() || "No current beat outline yet."}
+                      {planning.beatOutline.trim() ||
+                        "No current beat outline yet."}
                     </p>
                   </div>
 
                   <div className="rounded-2xl bg-white px-4 py-4 text-sm text-[var(--ink-muted)] ring-1 ring-black/6">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-[var(--ink)]">Proposed Beat Outline</p>
+                        <p className="font-semibold text-[var(--ink)]">
+                          Proposed Beat Outline
+                        </p>
                         <p className="mt-1 text-xs text-[var(--ink-faint)]">
                           Select only the beats you want to keep.
                         </p>
                       </div>
                       <Badge tone="accent">
-                        {selectedBeatCount} of {proposedBeatLines.length} selected
+                        {selectedBeatCount} of {proposedBeatLines.length}{" "}
+                        selected
                       </Badge>
                     </div>
                     {proposedBeatLines.length > 0 ? (
@@ -1616,12 +1964,16 @@ export function SceneWorkspaceView() {
                                   type="checkbox"
                                   checked={checked}
                                   onChange={(event) =>
-                                    setSelectedBeatIndexes((currentSelection) =>
-                                      event.target.checked
-                                        ? [...currentSelection, index].sort((left, right) => left - right)
-                                        : currentSelection.filter(
-                                            (selectedIndex) => selectedIndex !== index,
-                                          ),
+                                    setSelectedBeatIndexes(
+                                      (currentSelection) =>
+                                        event.target.checked
+                                          ? [...currentSelection, index].sort(
+                                              (left, right) => left - right,
+                                            )
+                                          : currentSelection.filter(
+                                              (selectedIndex) =>
+                                                selectedIndex !== index,
+                                            ),
                                     )
                                   }
                                 />
@@ -1640,7 +1992,8 @@ export function SceneWorkspaceView() {
                       </>
                     ) : (
                       <p className="mt-3 whitespace-pre-wrap">
-                        {beatReview.result.beatOutline || "No beat outline returned."}
+                        {beatReview.result.beatOutline ||
+                          "No beat outline returned."}
                       </p>
                     )}
                   </div>
@@ -1653,7 +2006,10 @@ export function SceneWorkspaceView() {
         {workspaceTab === "draft" ? (
           <div className="mt-6 flex min-h-0 flex-1 flex-col">
             <div className="flex items-center justify-between gap-4 text-sm text-[var(--ink-muted)]">
-              <span>Draft prose stays separate from scene planning and autosaves after a pause.</span>
+              <span>
+                Draft prose stays separate from scene planning and autosaves
+                after a pause.
+              </span>
               <span>{draftStatusLabel}</span>
             </div>
             <div className="prose-editor mt-4 flex-1 rounded-[2rem] border border-black/8 bg-white/82 p-6 shadow-inner">
@@ -1665,101 +2021,176 @@ export function SceneWorkspaceView() {
                 <SectionHeading
                   title="Rough Draft Review"
                   description={
-                    draftReview.result.summary ||
-                    draftReview.assistantMessage ||
-                    "Review the generated draft against the current scene prose before applying it."
+                    isDraftReviewApplyPending
+                      ? draftApplyStatusLabel
+                      : draftReview.result.summary ||
+                        draftReview.assistantMessage ||
+                        "Review the generated draft against the current scene prose before applying it."
                   }
                   actions={
                     <div className="flex flex-wrap gap-2">
-                      <Button variant="ghost" onClick={handleCancelDraftReview}>
+                      <Button
+                        variant="ghost"
+                        onClick={handleCancelDraftReview}
+                        disabled={isDraftReviewApplyPending}
+                      >
                         Cancel
                       </Button>
                       <Button
                         onClick={() => handleApplyDraft("replace")}
-                        disabled={!canInsertDraft}
+                        disabled={!canInsertDraft || isDraftReviewApplyPending}
                       >
-                        <CheckSquare className="size-4" />
-                        Replace With Selected Draft
+                        {isDraftReviewApplyPending &&
+                        draftReviewApplyState?.mode === "replace" ? (
+                          <RefreshCw className="size-4 animate-spin" />
+                        ) : (
+                          <CheckSquare className="size-4" />
+                        )}
+                        {isDraftReviewApplyPending &&
+                        draftReviewApplyState?.mode === "replace"
+                          ? "Applying..."
+                          : "Replace With Selected Draft"}
                       </Button>
                     </div>
                   }
                 />
 
                 <div className="mt-4 rounded-2xl bg-[color:rgba(184,88,63,0.08)] px-4 py-3 text-sm text-[var(--ink-muted)]">
-                  Current draft prose stays untouched while you review. Choose the
-                  blocks you want, then insert them where they belong or replace
-                  using only the checked prose.
+                  {isDraftReviewApplyPending
+                    ? "Selected draft is moving through the existing editor and autosave flow."
+                    : "Current draft prose stays untouched while you review. Choose the blocks you want, then insert them where they belong or replace using only the checked prose."}
                 </div>
 
-                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
-                    <Field label="Insert Position">
-                      <Select
-                        value={normalizedDraftInsertState.position}
-                        onChange={(event) =>
-                          setDraftInsertState((currentState) => ({
-                            ...currentState,
-                            position: event.target.value as SceneReviewInsertPosition,
-                          }))
-                        }
-                      >
-                        <option value="start">At draft beginning</option>
-                        <option value="end">At draft end</option>
-                        {currentDraftBlocks.length > 0 ? (
-                          <>
-                            <option value="before">Before selected block</option>
-                            <option value="after">After selected block</option>
-                          </>
-                        ) : null}
-                      </Select>
-                    </Field>
+                {draftOverlapWarnings.length > 0 ? (
+                  <div className="mt-4 rounded-2xl border border-[color:rgba(194,151,57,0.26)] bg-[color:rgba(194,151,57,0.12)] px-4 py-3">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="mt-0.5 size-4 shrink-0 text-[var(--warning)]" />
+                      <div className="grid gap-1 text-sm">
+                        <p className="font-semibold text-[var(--warning)]">
+                          Some selected draft blocks may already be covered
+                        </p>
+                        {draftOverlapWarnings.map((warning) => (
+                          <p
+                            key={`draft-overlap-${warning.incomingIndex}-${warning.currentIndex}`}
+                            className="text-[var(--ink-muted)]"
+                          >
+                            {warning.reason}
+                          </p>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
 
-                    {shouldChooseDraftInsertAnchor ? (
-                      <Field
-                        label={
-                          normalizedDraftInsertState.position === "before"
-                            ? "Before Block"
-                            : "After Block"
-                        }
-                      >
-                        <Select
-                          value={String(normalizedDraftInsertState.anchorIndex)}
-                          onChange={(event) =>
-                            setDraftInsertState((currentState) => ({
-                              ...currentState,
-                              anchorIndex: Number(event.target.value),
-                            }))
+                <div className="mt-4 rounded-2xl border border-black/8 bg-white/82 px-4 py-4">
+                  {isDraftReviewApplyPending ? (
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      The editor already has the selected draft. This review
+                      will close after autosave settles.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
+                        <Field label="Insert Position">
+                          <Select
+                            value={normalizedDraftInsertState.position}
+                            onChange={(event) =>
+                              setDraftInsertState((currentState) => ({
+                                ...currentState,
+                                position: event.target
+                                  .value as SceneReviewInsertPosition,
+                              }))
+                            }
+                          >
+                            <option value="start">At draft beginning</option>
+                            <option value="end">At draft end</option>
+                            {currentDraftBlocks.length > 0 ? (
+                              <>
+                                <option value="before">
+                                  Before selected block
+                                </option>
+                                <option value="after">
+                                  After selected block
+                                </option>
+                              </>
+                            ) : null}
+                          </Select>
+                        </Field>
+
+                        {shouldChooseDraftInsertAnchor ? (
+                          <Field
+                            label={
+                              normalizedDraftInsertState.position === "before"
+                                ? "Before Block"
+                                : "After Block"
+                            }
+                          >
+                            <Select
+                              value={String(
+                                normalizedDraftInsertState.anchorIndex,
+                              )}
+                              onChange={(event) =>
+                                setDraftInsertState((currentState) => ({
+                                  ...currentState,
+                                  anchorIndex: Number(event.target.value),
+                                }))
+                              }
+                            >
+                              {currentDraftBlocks.map((block, index) => (
+                                <option
+                                  key={`${index}-${block.text}`}
+                                  value={index}
+                                >
+                                  {buildInsertAnchorLabel(
+                                    "Block",
+                                    index,
+                                    block.text,
+                                  )}
+                                </option>
+                              ))}
+                            </Select>
+                          </Field>
+                        ) : null}
+
+                        <Button
+                          variant="secondary"
+                          onClick={() => handleApplyDraft("insert")}
+                          disabled={
+                            !canInsertDraft || isDraftReviewApplyPending
                           }
                         >
-                          {currentDraftBlocks.map((block, index) => (
-                            <option key={`${index}-${block.text}`} value={index}>
-                              {buildInsertAnchorLabel("Block", index, block.text)}
-                            </option>
-                          ))}
-                        </Select>
-                      </Field>
-                    ) : null}
+                          {isDraftReviewApplyPending &&
+                          draftReviewApplyState?.mode === "insert" ? (
+                            <RefreshCw className="size-4 animate-spin" />
+                          ) : null}
+                          {isDraftReviewApplyPending &&
+                          draftReviewApplyState?.mode === "insert"
+                            ? "Applying..."
+                            : "Insert Selected Draft"}
+                        </Button>
+                      </div>
 
-                    <Button
-                      variant="secondary"
-                      onClick={() => handleApplyDraft("insert")}
-                      disabled={!canInsertDraft}
-                    >
-                      Insert Selected Draft
-                    </Button>
-                  </div>
-
-                  <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                    Insert the checked prose blocks into the current draft at the
-                    chosen position without replacing the rest.
-                  </p>
+                      <p className="mt-2 text-sm text-[var(--ink-muted)]">
+                        {draftInsertSummary}
+                      </p>
+                      <p className="mt-1 text-sm text-[var(--ink-faint)]">
+                        Insert the checked prose blocks into the current draft
+                        at the chosen position without replacing the rest.
+                      </p>
+                    </>
+                  )}
                 </div>
 
                 <div className="mt-4 grid gap-3 lg:grid-cols-2">
                   <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="font-semibold text-[var(--ink)]">Current Draft</p>
-                      <Badge>{currentDraftWordCount} word{currentDraftWordCount === 1 ? "" : "s"}</Badge>
+                      <p className="font-semibold text-[var(--ink)]">
+                        Current Draft
+                      </p>
+                      <Badge>
+                        {currentDraftWordCount} word
+                        {currentDraftWordCount === 1 ? "" : "s"}
+                      </Badge>
                     </div>
                     <div className="mt-4 max-h-[18rem] overflow-y-auto">
                       {isBlankHtml(draft) ? (
@@ -1778,13 +2209,16 @@ export function SceneWorkspaceView() {
                   <div className="rounded-2xl border border-black/8 bg-white px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-[var(--ink)]">Proposed Draft</p>
+                        <p className="font-semibold text-[var(--ink)]">
+                          Proposed Draft
+                        </p>
                         <p className="mt-1 text-xs text-[var(--ink-faint)]">
                           Select the draft blocks you want to apply.
                         </p>
                       </div>
                       <Badge tone="accent">
-                        {selectedDraftBlockCount} of {proposedDraftBlocks.length} selected
+                        {selectedDraftBlockCount} of{" "}
+                        {proposedDraftBlocks.length} selected
                       </Badge>
                     </div>
                     <div className="mt-4 max-h-[18rem] overflow-y-auto">
@@ -1795,6 +2229,7 @@ export function SceneWorkspaceView() {
                               type="button"
                               variant="ghost"
                               className="px-3 py-1.5 text-xs"
+                              disabled={isDraftReviewApplyPending}
                               onClick={() =>
                                 setSelectedDraftBlockIndexes(
                                   proposedDraftBlocks.map((_, index) => index),
@@ -1807,6 +2242,7 @@ export function SceneWorkspaceView() {
                               type="button"
                               variant="ghost"
                               className="px-3 py-1.5 text-xs"
+                              disabled={isDraftReviewApplyPending}
                               onClick={() => setSelectedDraftBlockIndexes([])}
                             >
                               Clear
@@ -1814,7 +2250,8 @@ export function SceneWorkspaceView() {
                           </div>
                           <div className="grid gap-3">
                             {proposedDraftBlocks.map((block, index) => {
-                              const checked = selectedDraftBlockIndexes.includes(index);
+                              const checked =
+                                selectedDraftBlockIndexes.includes(index);
 
                               return (
                                 <label
@@ -1830,11 +2267,15 @@ export function SceneWorkspaceView() {
                                     <input
                                       type="checkbox"
                                       checked={checked}
+                                      disabled={isDraftReviewApplyPending}
                                       onChange={(event) =>
                                         setSelectedDraftBlockIndexes(
                                           (currentSelection) =>
                                             event.target.checked
-                                              ? [...currentSelection, index].sort(
+                                              ? [
+                                                  ...currentSelection,
+                                                  index,
+                                                ].sort(
                                                   (left, right) => left - right,
                                                 )
                                               : currentSelection.filter(
@@ -1850,7 +2291,9 @@ export function SceneWorkspaceView() {
                                   </span>
                                   <div
                                     className="prose prose-sm max-w-none text-[var(--ink)]"
-                                    dangerouslySetInnerHTML={{ __html: block.html }}
+                                    dangerouslySetInnerHTML={{
+                                      __html: block.html,
+                                    }}
                                   />
                                 </label>
                               );
@@ -1858,8 +2301,9 @@ export function SceneWorkspaceView() {
                           </div>
                           <div className="mt-3 text-xs text-[var(--ink-faint)]">
                             Selected prose: {selectedDraftWordCount} word
-                            {selectedDraftWordCount === 1 ? "" : "s"} across{" "}
-                            {selectedDraftBlockCount} block
+                            {selectedDraftWordCount === 1
+                              ? ""
+                              : "s"} across {selectedDraftBlockCount} block
                             {selectedDraftBlockCount === 1 ? "" : "s"}.
                           </div>
                         </>
@@ -1897,15 +2341,23 @@ export function SceneWorkspaceView() {
             {chapter ? (
               <div className="mt-3 grid gap-3 text-sm text-[var(--ink-muted)]">
                 <div>
-                  <p className="font-semibold text-[var(--ink)]">{chapter.title}</p>
-                  <p className="mt-1">{chapter.summary || "No chapter summary yet."}</p>
+                  <p className="font-semibold text-[var(--ink)]">
+                    {chapter.title}
+                  </p>
+                  <p className="mt-1">
+                    {chapter.summary || "No chapter summary yet."}
+                  </p>
                 </div>
                 <div>
-                  <span className="font-semibold text-[var(--ink)]">Purpose:</span>{" "}
+                  <span className="font-semibold text-[var(--ink)]">
+                    Purpose:
+                  </span>{" "}
                   {chapter.purpose || "Not defined yet."}
                 </div>
                 <div>
-                  <span className="font-semibold text-[var(--ink)]">Emotional movement:</span>{" "}
+                  <span className="font-semibold text-[var(--ink)]">
+                    Emotional movement:
+                  </span>{" "}
                   {chapter.emotionalMovement || "Not defined yet."}
                 </div>
               </div>
@@ -1941,11 +2393,17 @@ export function SceneWorkspaceView() {
                     }
                   >
                     <div className="flex items-start gap-3">
-                      <Badge tone={item.id === currentScene.id ? "accent" : "default"}>
+                      <Badge
+                        tone={
+                          item.id === currentScene.id ? "accent" : "default"
+                        }
+                      >
                         {index + 1}
                       </Badge>
                       <div className="min-w-0">
-                        <p className="font-semibold text-[var(--ink)]">{item.title}</p>
+                        <p className="font-semibold text-[var(--ink)]">
+                          {item.title}
+                        </p>
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
                           {item.summary || "No summary yet."}
                         </p>
@@ -1976,7 +2434,9 @@ export function SceneWorkspaceView() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <h4 className="font-semibold text-[var(--ink)]">{character.name}</h4>
+                        <h4 className="font-semibold text-[var(--ink)]">
+                          {character.name}
+                        </h4>
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
                           {character.role || "Role not defined yet."}
                         </p>
@@ -1987,11 +2447,15 @@ export function SceneWorkspaceView() {
                     </div>
                     <div className="mt-3 grid gap-2 text-sm text-[var(--ink-muted)]">
                       <div>
-                        <span className="font-semibold text-[var(--ink)]">Speaking style:</span>{" "}
+                        <span className="font-semibold text-[var(--ink)]">
+                          Speaking style:
+                        </span>{" "}
                         {character.speakingStyle || "Not defined yet."}
                       </div>
                       <div>
-                        <span className="font-semibold text-[var(--ink)]">Arc direction:</span>{" "}
+                        <span className="font-semibold text-[var(--ink)]">
+                          Arc direction:
+                        </span>{" "}
                         {character.arcDirection || "Not defined yet."}
                       </div>
                     </div>
@@ -2020,7 +2484,9 @@ export function SceneWorkspaceView() {
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold text-[var(--ink)]">{suggestion.title}</p>
+                        <p className="font-semibold text-[var(--ink)]">
+                          {suggestion.title}
+                        </p>
                         <p className="mt-2 text-sm text-[var(--ink-muted)]">
                           {suggestion.rationale}
                         </p>
