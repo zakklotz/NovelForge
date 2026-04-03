@@ -31,8 +31,14 @@ function describeNavigationTarget(pathname: string) {
   if (pathname === "/characters") {
     return "open Characters";
   }
+  if (pathname.startsWith("/characters/")) {
+    return "open another character";
+  }
   if (pathname === "/suggestions") {
     return "open Suggestions";
+  }
+  if (pathname.startsWith("/suggestions/")) {
+    return "open another suggestion";
   }
   if (pathname === "/scratchpad") {
     return "open Scratchpad";

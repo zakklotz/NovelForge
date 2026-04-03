@@ -221,7 +221,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
 
   const layoutClassName = standalone
     ? "mx-auto mt-10 max-w-6xl space-y-4 px-6 pb-10"
-    : "space-y-4";
+    : "h-full min-h-0 space-y-4 overflow-y-auto";
 
   return (
     <div className={layoutClassName}>
@@ -246,7 +246,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
             </div>
           }
         />
-        <div className="mt-5 grid gap-3 border-t border-[var(--border)] pt-4 lg:grid-cols-[minmax(0,1.2fr)_320px]">
+        <div className="mt-5 grid gap-3 border-t border-[var(--border)] pt-4 xl:grid-cols-[minmax(0,1.2fr)_320px]">
           <div className="grid gap-4">
             <Panel className="bg-[var(--surface-elevated)]">
               <Field label="Default Provider">
@@ -332,7 +332,7 @@ export function SettingsView({ standalone = false }: { standalone?: boolean }) {
                     </label>
                   </div>
 
-                  <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
+                  <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)]">
                     <Field
                       label="API Key"
                       hint={

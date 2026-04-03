@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
 import type {
   Chapter,
@@ -36,7 +36,7 @@ import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { createId } from "@/lib/ids";
 import { cn } from "@/lib/utils";
-import { useUiStore } from "@/store/uiStore";
+import { useUiStore, type WorkspaceDirtyArea } from "@/store/uiStore";
 
 type DiagnosticTone = "default" | "accent" | "warning" | "danger";
 
@@ -664,7 +664,10 @@ export function StoryOverviewView() {
   const dirtyStoryBriefFields = storyBriefDirty
     ? getChangedStoryBriefFields(storyBrief, persistedStoryBrief)
     : [];
-  const dirtyAreas = storyBriefDirty ? (["planning"] as const) : [];
+  const dirtyAreas = useMemo<WorkspaceDirtyArea[]>(
+    () => (storyBriefDirty ? ["planning"] : []),
+    [storyBriefDirty],
+  );
   const canSaveStoryBrief = storyBrief.title.trim().length > 0;
 
   useEffect(() => {
@@ -707,22 +710,6 @@ export function StoryOverviewView() {
       return nextPersistedStoryBrief;
     });
   }, [snapshot]);
-
-  useLayoutEffect(() => {
-    if (!snapshot) {
-      setWorkspaceSession(null);
-      return;
-    }
-
-    setWorkspaceSession({
-      kind: "story",
-      entityId: snapshot.project.id,
-      entityTitle: storyBrief.title.trim() || snapshot.project.title || "Story Brief",
-      dirtyAreas: [...dirtyAreas],
-      saveChanges: saveCurrentStoryBriefChanges,
-      discardChanges: discardCurrentStoryBriefChanges,
-    });
-  }, [dirtyAreas, setWorkspaceSession, snapshot, storyBrief.title]);
 
   useLayoutEffect(() => {
     const currentProjectId = snapshot?.project.id;
@@ -973,6 +960,43 @@ export function StoryOverviewView() {
     setStoryBriefError(null);
     setStoryBrief(persistedStoryBrief);
   }
+
+  const workspaceSaveActionRef = useRef(saveCurrentStoryBriefChanges);
+  const workspaceDiscardActionRef = useRef(discardCurrentStoryBriefChanges);
+  workspaceSaveActionRef.current = saveCurrentStoryBriefChanges;
+  workspaceDiscardActionRef.current = discardCurrentStoryBriefChanges;
+
+  const handleWorkspaceSessionSave = useCallback(
+    () => workspaceSaveActionRef.current(),
+    [],
+  );
+  const handleWorkspaceSessionDiscard = useCallback(
+    () => workspaceDiscardActionRef.current(),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!snapshot) {
+      setWorkspaceSession(null);
+      return;
+    }
+
+    setWorkspaceSession({
+      kind: "story",
+      entityId: snapshot.project.id,
+      entityTitle: storyBrief.title.trim() || snapshot.project.title || "Story Brief",
+      dirtyAreas,
+      saveChanges: handleWorkspaceSessionSave,
+      discardChanges: handleWorkspaceSessionDiscard,
+    });
+  }, [
+    dirtyAreas,
+    handleWorkspaceSessionDiscard,
+    handleWorkspaceSessionSave,
+    setWorkspaceSession,
+    snapshot,
+    storyBrief.title,
+  ]);
 
   async function handleSaveStoryBrief() {
     try {
@@ -1333,7 +1357,7 @@ export function StoryOverviewView() {
   }
 
   return (
-    <Panel className="h-full min-h-0">
+    <Panel className="h-full min-h-0 overflow-y-auto">
       <SectionHeading
         title="Story Spine"
         description="Define what the story is trying to be, then scan the full chapter spine in order so planning and diagnostics have a stronger anchor."
@@ -1422,7 +1446,7 @@ export function StoryOverviewView() {
           </Panel>
         ) : null}
 
-        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.15fr)_minmax(320px,0.95fr)]">
+        <div className="mt-6 grid gap-4 2xl:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
           <div className="grid gap-4">
             <div className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
@@ -1644,7 +1668,7 @@ export function StoryOverviewView() {
             </Badge>
           </div>
 
-          <div className="mt-6 grid gap-4 xl:grid-cols-2">
+          <div className="mt-6 grid gap-4 2xl:grid-cols-2">
             {visibleStoryDiagnosticSections.map((section) => {
               const entries =
                 storyDiagnosticResponse.result.storyStructureDiagnostic[section.key];
@@ -1940,7 +1964,7 @@ export function StoryOverviewView() {
 
                         {orderedChapters.length > 0 ? (
                           <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
-                            <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_auto] lg:items-end">
+                            <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_auto] xl:items-end">
                               <Field
                                 label="Destination chapter"
                                 hint="Choose where this scene should land"
@@ -2168,7 +2192,7 @@ export function StoryOverviewView() {
                     </div>
                   </div>
 
-                  <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)]">
+                  <div className="mt-5 grid gap-4 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.95fr)]">
                     <div className="grid gap-4">
                       <div className="rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[var(--ink-faint)]">
@@ -2365,7 +2389,7 @@ export function StoryOverviewView() {
 
                                 {isMovingChapterScene && chapterSceneMoveDraft ? (
                                     <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4">
-                                      <div className="grid gap-3 lg:grid-cols-2">
+                                      <div className="grid gap-3 xl:grid-cols-2">
                                       <Field
                                         label="Destination"
                                         hint="Choose a chapter or Unassigned"

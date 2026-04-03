@@ -23,8 +23,10 @@ describe("project route helpers", () => {
     expect(normalizeProjectRoute("/scratchpad")).toBe("/scratchpad");
   });
 
-  it("still falls back for unsupported detail routes", () => {
-    expect(normalizeProjectRoute("/scenes/scene-1")).toBe(DEFAULT_PROJECT_ROUTE);
+  it("keeps supported detail routes intact", () => {
+    expect(normalizeProjectRoute("/scenes/scene-1")).toBe("/scenes/scene-1");
+    expect(normalizeProjectRoute("/characters/char-ava")).toBe("/characters/char-ava");
+    expect(normalizeProjectRoute("/suggestions/suggestion-1")).toBe("/suggestions/suggestion-1");
   });
 
   it("does not persist the transient root route", () => {
@@ -33,7 +35,9 @@ describe("project route helpers", () => {
     expect(shouldPersistProjectRoute("/chapters")).toBe(true);
     expect(shouldPersistProjectRoute("/chapters/chapter-1")).toBe(true);
     expect(shouldPersistProjectRoute("/scratchpad")).toBe(true);
-    expect(shouldPersistProjectRoute("/scenes/scene-1")).toBe(false);
+    expect(shouldPersistProjectRoute("/scenes/scene-1")).toBe(true);
+    expect(shouldPersistProjectRoute("/characters/char-ava")).toBe(true);
+    expect(shouldPersistProjectRoute("/suggestions/suggestion-1")).toBe(true);
   });
 
   it("resolves valid detail routes into typed router navigation targets", () => {
@@ -51,6 +55,14 @@ describe("project route helpers", () => {
         sceneId: "scene-1",
       },
     });
+    expect(
+      resolveProjectRouteNavigation("/characters/char-ava", sampleProjectSnapshot),
+    ).toEqual({
+      to: "/characters/$characterId",
+      params: {
+        characterId: "char-ava",
+      },
+    });
   });
 
   it("falls back to safe parent routes when detail targets are stale", () => {
@@ -63,6 +75,11 @@ describe("project route helpers", () => {
       resolveProjectRouteNavigation("/scenes/scene-missing", sampleProjectSnapshot),
     ).toEqual({
       to: "/scenes",
+    });
+    expect(
+      resolveProjectRouteNavigation("/characters/char-missing", sampleProjectSnapshot),
+    ).toEqual({
+      to: "/characters",
     });
   });
 

@@ -1,11 +1,18 @@
+import { useNavigate } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
 import { Badge, Button, EmptyState, Panel, SectionHeading } from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
+import { useUiStore } from "@/store/uiStore";
 
 export function SuggestionsView() {
+  const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
   const { queueAnalysis, updateSuggestion } = useProjectRuntime();
+  const [selectedSuggestionId, setSelectedSuggestionId] = useUiStore((state) => [
+    state.selectedSuggestionId,
+    state.setSelectedSuggestionId,
+  ]);
   const snapshot = snapshotQuery.data;
 
   if (!snapshot) {
@@ -17,7 +24,7 @@ export function SuggestionsView() {
   );
 
   return (
-    <Panel className="h-full min-h-0">
+    <Panel className="h-full min-h-0 overflow-y-auto">
       <SectionHeading
         title="Suggestions Inbox"
         description="Review structural or continuity implications after moving scenes, changing chapters, or updating character cards."
@@ -42,7 +49,18 @@ export function SuggestionsView() {
           suggestions.map((suggestion) => (
             <div
               key={suggestion.id}
-              className="border-l-2 border-transparent bg-[var(--panel)] px-4 py-3 transition hover:bg-[var(--surface-elevated)]"
+              className={`border-l-2 bg-[var(--panel)] px-4 py-3 transition hover:bg-[var(--surface-elevated)] ${
+                selectedSuggestionId === suggestion.id
+                  ? "border-[var(--accent)] bg-[var(--selected)]"
+                  : "border-transparent"
+              }`}
+              onClick={() => {
+                setSelectedSuggestionId(suggestion.id);
+                void navigate({
+                  to: "/suggestions/$suggestionId",
+                  params: { suggestionId: suggestion.id },
+                });
+              }}
             >
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div className="space-y-2">
@@ -71,25 +89,27 @@ export function SuggestionsView() {
                 <div className="flex gap-2">
                   <Button
                     variant="secondary"
-                    onClick={() =>
-                      updateSuggestion({
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void updateSuggestion({
                         projectId: snapshot.project.id,
                         suggestionId: suggestion.id,
                         status: "applied",
-                      })
-                    }
+                      });
+                    }}
                   >
                     Mark Resolved
                   </Button>
                   <Button
                     variant="ghost"
-                    onClick={() =>
-                      updateSuggestion({
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      void updateSuggestion({
                         projectId: snapshot.project.id,
                         suggestionId: suggestion.id,
                         status: "dismissed",
-                      })
-                    }
+                      });
+                    }}
                   >
                     Dismiss
                   </Button>

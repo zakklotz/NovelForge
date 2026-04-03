@@ -35,7 +35,7 @@ export function ScenesView() {
   }
 
   return (
-    <Panel className="h-full min-h-0">
+    <Panel className="h-full min-h-0 overflow-y-auto">
       <SectionHeading
         title="Scenes"
         description="Move scenes across chapters without losing the structural context that makes them work."

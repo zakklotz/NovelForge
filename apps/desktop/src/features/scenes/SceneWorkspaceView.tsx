@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
@@ -888,10 +888,13 @@ export function SceneWorkspaceView() {
     : [];
   const planningDirty = planningChangedFields.length > 0;
   const draftDirty = Boolean(scene) && draft !== persistedDraft;
-  const dirtyAreas = [
-    planningDirty ? "planning" : null,
-    draftDirty ? "draft" : null,
-  ].filter((value): value is "planning" | "draft" => Boolean(value));
+  const dirtyAreas = useMemo(
+    () =>
+      [planningDirty ? "planning" : null, draftDirty ? "draft" : null].filter(
+        (value): value is "planning" | "draft" => Boolean(value),
+      ),
+    [draftDirty, planningDirty],
+  );
 
   useEffect(() => {
     if (
@@ -1082,6 +1085,20 @@ export function SceneWorkspaceView() {
     }
   }
 
+  const workspaceSaveActionRef = useRef(saveCurrentWorkspaceChanges);
+  const workspaceDiscardActionRef = useRef(discardCurrentWorkspaceChanges);
+  workspaceSaveActionRef.current = saveCurrentWorkspaceChanges;
+  workspaceDiscardActionRef.current = discardCurrentWorkspaceChanges;
+
+  const handleWorkspaceSessionSave = useCallback(
+    () => workspaceSaveActionRef.current(),
+    [],
+  );
+  const handleWorkspaceSessionDiscard = useCallback(
+    () => workspaceDiscardActionRef.current(),
+    [],
+  );
+
   useLayoutEffect(() => {
     if (!scene) {
       setWorkspaceSession(null);
@@ -1093,10 +1110,17 @@ export function SceneWorkspaceView() {
       entityId: scene.id,
       entityTitle: planning.title.trim() || scene.title,
       dirtyAreas,
-      saveChanges: saveCurrentWorkspaceChanges,
-      discardChanges: discardCurrentWorkspaceChanges,
+      saveChanges: handleWorkspaceSessionSave,
+      discardChanges: handleWorkspaceSessionDiscard,
     });
-  }, [dirtyAreas, planning.title, scene, setWorkspaceSession]);
+  }, [
+    dirtyAreas,
+    handleWorkspaceSessionDiscard,
+    handleWorkspaceSessionSave,
+    planning.title,
+    scene,
+    setWorkspaceSession,
+  ]);
 
   useLayoutEffect(() => {
     if (!scene) {
@@ -1451,7 +1475,7 @@ export function SceneWorkspaceView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[320px_minmax(0,1fr)_360px]">
+    <div className="grid h-full min-h-0 gap-[var(--workbench-editor-gap)] xl:grid-cols-[minmax(280px,var(--workbench-editor-sidebar-width))_minmax(0,1fr)]">
       <Panel
         ref={sceneJumpHighlightRef}
         tabIndex={-1}
@@ -1626,7 +1650,8 @@ export function SceneWorkspaceView() {
         </div>
       </Panel>
 
-      <Panel className="flex min-h-0 flex-col">
+      <div className="grid min-h-0 gap-[var(--workbench-editor-gap)] 2xl:grid-cols-[minmax(0,1fr)_minmax(280px,var(--workbench-editor-context-width))]">
+        <Panel className="flex min-h-0 flex-col overflow-hidden">
         <SectionHeading
           title={planning.title || currentScene.title}
           description={
@@ -1705,7 +1730,7 @@ export function SceneWorkspaceView() {
         ) : null}
 
         {workspaceTab === "overview" ? (
-          <div className="mt-6 grid gap-4 overflow-y-auto pr-1 lg:grid-cols-2">
+          <div className="mt-6 grid gap-4 overflow-y-auto pr-1 xl:grid-cols-2">
             <Field label="Summary" className="lg:col-span-2">
               <Textarea
                 className="min-h-28"
@@ -1763,7 +1788,7 @@ export function SceneWorkspaceView() {
                 }
               />
             </Field>
-            <div className="grid gap-3 lg:grid-cols-3">
+            <div className="grid gap-3 xl:grid-cols-3">
               {structuralPrompts.map((prompt) => (
                 <div
                   key={prompt}
@@ -1827,7 +1852,7 @@ export function SceneWorkspaceView() {
                 ) : null}
 
                 <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
-                  <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] xl:items-end">
                     <Field label="Insert Position">
                       <Select
                         value={normalizedBeatInsertState.position}
@@ -1894,7 +1919,7 @@ export function SceneWorkspaceView() {
                   </p>
                 </div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="mt-4 grid gap-3 2xl:grid-cols-2">
                   <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 text-sm text-[var(--ink-muted)]">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-[var(--ink)]">
@@ -2094,7 +2119,7 @@ export function SceneWorkspaceView() {
                     </p>
                   ) : (
                     <>
-                      <div className="grid gap-3 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] lg:items-end">
+                      <div className="grid gap-3 xl:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)_auto] xl:items-end">
                         <Field label="Insert Position">
                           <Select
                             value={normalizedDraftInsertState.position}
@@ -2178,7 +2203,7 @@ export function SceneWorkspaceView() {
                   )}
                 </div>
 
-                <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                <div className="mt-4 grid gap-3 2xl:grid-cols-2">
                   <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-5 py-5">
                     <div className="flex items-center justify-between gap-3">
                       <p className="font-semibold text-[var(--ink)]">
@@ -2508,6 +2533,7 @@ export function SceneWorkspaceView() {
           </Panel>
         </div>
       </Panel>
+      </div>
     </div>
   );
 }

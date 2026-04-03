@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
 import type { Character, Relationship } from "@novelforge/domain";
 import { Plus, Trash2 } from "lucide-react";
 import { useShallow } from "zustand/react/shallow";
@@ -98,7 +99,7 @@ function CharacterEditor({ character }: { character: Character }) {
   }
 
   return (
-    <Panel className="h-full">
+    <Panel className="h-full overflow-y-auto">
       <SectionHeading
         title="Character Card"
         description="Keep voice and behavioral logic coherent as the manuscript shifts."
@@ -230,7 +231,7 @@ function CharacterEditor({ character }: { character: Character }) {
           />
         </Field>
 
-        <div className="grid gap-4 xl:grid-cols-2">
+        <div className="grid gap-4 2xl:grid-cols-2">
           <Panel className="bg-[var(--surface-elevated)] p-3">
             <h3 className="text-[13px] font-semibold text-[var(--ink)]">Linked scenes</h3>
             <div className="mt-3 flex flex-wrap gap-2">
@@ -261,6 +262,7 @@ function CharacterEditor({ character }: { character: Character }) {
 }
 
 export function CharactersView() {
+  const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
   const { saveCharacter } = useProjectRuntime();
   const [selectedCharacterId, setSelectedCharacterId, searchText] = useUiStore(useShallow((state) => [
@@ -315,11 +317,15 @@ export function CharactersView() {
 
     await saveCharacter(newCharacter);
     setSelectedCharacterId(newCharacter.id);
+    await navigate({
+      to: "/characters/$characterId",
+      params: { characterId: newCharacter.id },
+    });
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(0,0.8fr)_minmax(360px,1.2fr)]">
-      <Panel className="min-h-0">
+    <div className="grid h-full min-h-0 gap-[var(--workbench-editor-gap)] xl:grid-cols-[minmax(260px,0.7fr)_minmax(0,1.3fr)]">
+      <Panel className="min-h-0 overflow-y-auto">
         <SectionHeading
           title="Characters"
           description="Treat character cards as voice and behavior anchors, not detached bios."
@@ -340,7 +346,13 @@ export function CharactersView() {
                     ? "border-[var(--accent)] bg-[var(--selected)]"
                     : "border-transparent hover:bg-[var(--hover)]"
                 }`}
-                onClick={() => setSelectedCharacterId(character.id)}
+                onClick={() => {
+                  setSelectedCharacterId(character.id);
+                  void navigate({
+                    to: "/characters/$characterId",
+                    params: { characterId: character.id },
+                  });
+                }}
               >
                 <h3 className="text-[13px] font-medium text-[var(--ink)]">
                   {character.name}

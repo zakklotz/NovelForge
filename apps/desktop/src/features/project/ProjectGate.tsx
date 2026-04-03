@@ -259,14 +259,22 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const openWorkspace = useEffectEvent(
     async (
       route: string | null | undefined,
-      snapshotOverride?: Pick<ProjectSnapshot, "chapters" | "scenes">,
+      snapshotOverride?: Pick<
+        ProjectSnapshot,
+        "chapters" | "scenes" | "characters" | "suggestions"
+      >,
     ) => {
       const routeSnapshot = snapshotOverride ?? snapshotQuery.data;
       const target = routeSnapshot
         ? resolveProjectRouteNavigation(route, routeSnapshot)
         : resolveProjectRouteNavigation(route);
 
-      if (target.to === "/chapters/$chapterId" || target.to === "/scenes/$sceneId") {
+      if (
+        target.to === "/chapters/$chapterId" ||
+        target.to === "/scenes/$sceneId" ||
+        target.to === "/characters/$characterId" ||
+        target.to === "/suggestions/$suggestionId"
+      ) {
         await navigate({
           to: target.to,
           params: target.params,

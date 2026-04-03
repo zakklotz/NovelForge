@@ -277,7 +277,7 @@ export function ScratchpadView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[320px_minmax(0,1fr)_380px]">
+    <div className="grid h-full min-h-0 gap-[var(--workbench-editor-gap)] xl:grid-cols-[minmax(280px,var(--workbench-editor-sidebar-width))_minmax(0,1fr)]">
       <Panel className="min-h-0 overflow-y-auto">
         <SectionHeading
           title="Scratchpad"
@@ -488,217 +488,219 @@ export function ScratchpadView() {
         </div>
       </Panel>
 
-      <Panel className="flex min-h-0 flex-col">
-        <SectionHeading
-          title="Chat Thread"
-          description="Use this space like a story workshop. The assistant only proposes structure until you apply it."
-        />
+      <div className="grid min-h-0 gap-[var(--workbench-editor-gap)] 2xl:grid-cols-[minmax(0,1fr)_minmax(320px,var(--workbench-editor-context-width))]">
+        <Panel className="flex min-h-0 flex-col">
+          <SectionHeading
+            title="Chat Thread"
+            description="Use this space like a story workshop. The assistant only proposes structure until you apply it."
+          />
 
-        <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto border-t border-[var(--border)] pt-4">
-          {session.messages.length > 0 ? (
-            session.messages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
-            ))
-          ) : (
-            <EmptyState
-              title="No scratchpad messages yet"
-              description="Paste source material on the left and choose what the assistant should build from it."
-            />
-          )}
-        </div>
-      </Panel>
+          <div className="mt-5 min-h-0 flex-1 space-y-3 overflow-y-auto border-t border-[var(--border)] pt-4">
+            {session.messages.length > 0 ? (
+              session.messages.map((message) => (
+                <MessageBubble key={message.id} message={message} />
+              ))
+            ) : (
+              <EmptyState
+                title="No scratchpad messages yet"
+                description="Paste source material on the left and choose what the assistant should build from it."
+              />
+            )}
+          </div>
+        </Panel>
 
-      <Panel className="min-h-0 overflow-y-auto">
-        <SectionHeading
-          title="Structured Result"
-          description="Review proposals before they become part of the current project."
-          actions={
-            <Button
-              variant="secondary"
-              onClick={handleApply}
-              disabled={!latestResult || isSelectionEmpty || isApplying}
-            >
-              {isApplying ? (
-                <RefreshCw className="size-4 animate-spin" />
-              ) : (
-                <CheckSquare className="size-4" />
-              )}
-              Apply Selected
-            </Button>
-          }
-        />
-
-        {error ? (
-          <Panel className="mt-4 bg-[var(--danger-surface)]">
-            <p className="text-sm text-[var(--danger)]">{error}</p>
-          </Panel>
-        ) : null}
-
-        {applyMessage ? (
-          <Panel className="mt-4 bg-[var(--success-surface)]">
-            <p className="text-sm text-[var(--success)]">{applyMessage}</p>
-          </Panel>
-        ) : null}
-
-        {latestResult ? (
-          <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-4">
-            <Panel className="bg-[var(--surface-elevated)]">
-              <h3 className="text-[13px] font-semibold text-[var(--ink)]">Summary</h3>
-              <p className="mt-2 text-[13px] text-[var(--ink-muted)]">
-                {latestResult.summary || "The assistant returned structure without a summary."}
-              </p>
-            </Panel>
-
-            <Panel className="bg-[var(--surface-elevated)]">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-[var(--ink)]">Chapters</h3>
-                <Badge tone="accent">{latestResult.chapters.length}</Badge>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {latestResult.chapters.length > 0 ? (
-                  latestResult.chapters.map((chapter, index) => (
-                    <label
-                      key={`${chapter.title}-${index}`}
-                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
-                    >
-                      <span className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selection.chapters.includes(index)}
-                          onChange={() =>
-                            setSelection((current) => ({
-                              ...current,
-                              chapters: toggleIndex(current.chapters, index),
-                            }))
-                          }
-                        />
-                        <span className="font-semibold text-[var(--ink)]">
-                          {chapter.title}
-                        </span>
-                      </span>
-                      <p className="text-sm text-[var(--ink-muted)]">{chapter.summary}</p>
-                    </label>
-                  ))
+        <Panel className="min-h-0 overflow-y-auto">
+          <SectionHeading
+            title="Structured Result"
+            description="Review proposals before they become part of the current project."
+            actions={
+              <Button
+                variant="secondary"
+                onClick={handleApply}
+                disabled={!latestResult || isSelectionEmpty || isApplying}
+              >
+                {isApplying ? (
+                  <RefreshCw className="size-4 animate-spin" />
                 ) : (
-                  <p className="text-sm text-[var(--ink-muted)]">
-                    No chapter proposals in this response.
-                  </p>
+                  <CheckSquare className="size-4" />
                 )}
-              </div>
-            </Panel>
+                Apply Selected
+              </Button>
+            }
+          />
 
-            <Panel className="bg-[var(--surface-elevated)]">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-[var(--ink)]">Scenes</h3>
-                <Badge tone="accent">{latestResult.scenes.length}</Badge>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {latestResult.scenes.length > 0 ? (
-                  latestResult.scenes.map((scene, index) => (
-                    <label
-                      key={`${scene.title}-${index}`}
-                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
-                    >
-                      <span className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selection.scenes.includes(index)}
-                          onChange={() =>
-                            setSelection((current) => ({
-                              ...current,
-                              scenes: toggleIndex(current.scenes, index),
-                            }))
-                          }
-                        />
-                        <span className="font-semibold text-[var(--ink)]">
-                          {scene.title}
+          {error ? (
+            <Panel className="mt-4 bg-[var(--danger-surface)]">
+              <p className="text-sm text-[var(--danger)]">{error}</p>
+            </Panel>
+          ) : null}
+
+          {applyMessage ? (
+            <Panel className="mt-4 bg-[var(--success-surface)]">
+              <p className="text-sm text-[var(--success)]">{applyMessage}</p>
+            </Panel>
+          ) : null}
+
+          {latestResult ? (
+            <div className="mt-5 space-y-3 border-t border-[var(--border)] pt-4">
+              <Panel className="bg-[var(--surface-elevated)]">
+                <h3 className="text-[13px] font-semibold text-[var(--ink)]">Summary</h3>
+                <p className="mt-2 text-[13px] text-[var(--ink-muted)]">
+                  {latestResult.summary || "The assistant returned structure without a summary."}
+                </p>
+              </Panel>
+
+              <Panel className="bg-[var(--surface-elevated)]">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-[var(--ink)]">Chapters</h3>
+                  <Badge tone="accent">{latestResult.chapters.length}</Badge>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {latestResult.chapters.length > 0 ? (
+                    latestResult.chapters.map((chapter, index) => (
+                      <label
+                        key={`${chapter.title}-${index}`}
+                        className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
+                      >
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selection.chapters.includes(index)}
+                            onChange={() =>
+                              setSelection((current) => ({
+                                ...current,
+                                chapters: toggleIndex(current.chapters, index),
+                              }))
+                            }
+                          />
+                          <span className="font-semibold text-[var(--ink)]">
+                            {chapter.title}
+                          </span>
                         </span>
-                      </span>
-                      <p className="text-sm text-[var(--ink-muted)]">{scene.summary}</p>
-                      {scene.chapterTitleHint ? (
-                        <p className="text-xs uppercase tracking-[0.18em] text-[var(--ink-faint)]">
-                          Suggested chapter: {scene.chapterTitleHint}
-                        </p>
-                      ) : null}
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-[var(--ink-muted)]">
-                    No scene proposals in this response.
-                  </p>
-                )}
-              </div>
-            </Panel>
+                        <p className="text-sm text-[var(--ink-muted)]">{chapter.summary}</p>
+                      </label>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      No chapter proposals in this response.
+                    </p>
+                  )}
+                </div>
+              </Panel>
 
-            <Panel className="bg-[var(--surface-elevated)]">
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="text-base font-semibold text-[var(--ink)]">Characters</h3>
-                <Badge tone="accent">{latestResult.characters.length}</Badge>
-              </div>
-              <div className="mt-4 grid gap-3">
-                {latestResult.characters.length > 0 ? (
-                  latestResult.characters.map((character, index) => (
-                    <label
-                      key={`${character.name}-${index}`}
-                      className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
-                    >
-                      <span className="flex items-center gap-3">
-                        <input
-                          type="checkbox"
-                          checked={selection.characters.includes(index)}
-                          onChange={() =>
-                            setSelection((current) => ({
-                              ...current,
-                              characters: toggleIndex(current.characters, index),
-                            }))
-                          }
-                        />
-                        <span className="font-semibold text-[var(--ink)]">
-                          {character.name}
+              <Panel className="bg-[var(--surface-elevated)]">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-[var(--ink)]">Scenes</h3>
+                  <Badge tone="accent">{latestResult.scenes.length}</Badge>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {latestResult.scenes.length > 0 ? (
+                    latestResult.scenes.map((scene, index) => (
+                      <label
+                        key={`${scene.title}-${index}`}
+                        className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
+                      >
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selection.scenes.includes(index)}
+                            onChange={() =>
+                              setSelection((current) => ({
+                                ...current,
+                                scenes: toggleIndex(current.scenes, index),
+                              }))
+                            }
+                          />
+                          <span className="font-semibold text-[var(--ink)]">
+                            {scene.title}
+                          </span>
                         </span>
-                      </span>
-                      <p className="text-sm text-[var(--ink-muted)]">{character.role}</p>
-                    </label>
-                  ))
-                ) : (
-                  <p className="text-sm text-[var(--ink-muted)]">
-                    No character proposals in this response.
-                  </p>
-                )}
-              </div>
-            </Panel>
+                        <p className="text-sm text-[var(--ink-muted)]">{scene.summary}</p>
+                        {scene.chapterTitleHint ? (
+                          <p className="text-xs uppercase tracking-[0.18em] text-[var(--ink-faint)]">
+                            Suggested chapter: {scene.chapterTitleHint}
+                          </p>
+                        ) : null}
+                      </label>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      No scene proposals in this response.
+                    </p>
+                  )}
+                </div>
+              </Panel>
 
-            <Panel className="bg-[var(--surface-elevated)]">
-              <h3 className="text-[13px] font-semibold text-[var(--ink)]">
-                Continuity Notes
-              </h3>
-              <ul className="mt-3 grid gap-2">
-                {latestResult.continuityNotes.length > 0 ? (
-                  latestResult.continuityNotes.map((note) => (
-                    <li
-                      key={note}
-                      className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-[13px] text-[var(--ink-muted)]"
-                    >
-                      {note}
+              <Panel className="bg-[var(--surface-elevated)]">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-base font-semibold text-[var(--ink)]">Characters</h3>
+                  <Badge tone="accent">{latestResult.characters.length}</Badge>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  {latestResult.characters.length > 0 ? (
+                    latestResult.characters.map((character, index) => (
+                      <label
+                        key={`${character.name}-${index}`}
+                        className="grid gap-2 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
+                      >
+                        <span className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={selection.characters.includes(index)}
+                            onChange={() =>
+                              setSelection((current) => ({
+                                ...current,
+                                characters: toggleIndex(current.characters, index),
+                              }))
+                            }
+                          />
+                          <span className="font-semibold text-[var(--ink)]">
+                            {character.name}
+                          </span>
+                        </span>
+                        <p className="text-sm text-[var(--ink-muted)]">{character.role}</p>
+                      </label>
+                    ))
+                  ) : (
+                    <p className="text-sm text-[var(--ink-muted)]">
+                      No character proposals in this response.
+                    </p>
+                  )}
+                </div>
+              </Panel>
+
+              <Panel className="bg-[var(--surface-elevated)]">
+                <h3 className="text-[13px] font-semibold text-[var(--ink)]">
+                  Continuity Notes
+                </h3>
+                <ul className="mt-3 grid gap-2">
+                  {latestResult.continuityNotes.length > 0 ? (
+                    latestResult.continuityNotes.map((note) => (
+                      <li
+                        key={note}
+                        className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-3 text-[13px] text-[var(--ink-muted)]"
+                      >
+                        {note}
+                      </li>
+                    ))
+                  ) : (
+                    <li className="text-sm text-[var(--ink-muted)]">
+                      No continuity notes in this response.
                     </li>
-                  ))
-                ) : (
-                  <li className="text-sm text-[var(--ink-muted)]">
-                    No continuity notes in this response.
-                  </li>
-                )}
-              </ul>
-            </Panel>
-          </div>
-        ) : (
-          <div className="mt-6">
-            <EmptyState
-              title="No result yet"
-              description="After you send material through the scratchpad, NovelForge will show structured proposals here for review."
-            />
-          </div>
-        )}
-      </Panel>
+                  )}
+                </ul>
+              </Panel>
+            </div>
+          ) : (
+            <div className="mt-6">
+              <EmptyState
+                title="No result yet"
+                description="After you send material through the scratchpad, NovelForge will show structured proposals here for review."
+              />
+            </div>
+          )}
+        </Panel>
+      </div>
     </div>
   );
 }

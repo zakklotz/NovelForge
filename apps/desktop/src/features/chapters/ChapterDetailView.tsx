@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import type { Chapter, StructuredAiResponse } from "@novelforge/domain";
 import {
@@ -33,7 +33,7 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { cn, scrollIntoViewWithAccessibleMotion, splitLines } from "@/lib/utils";
-import { useUiStore } from "@/store/uiStore";
+import { useUiStore, type WorkspaceDirtyArea } from "@/store/uiStore";
 import { createEmptySceneInput } from "@/features/scenes/sceneFactories";
 
 interface ChapterPlanningState {
@@ -352,24 +352,11 @@ export function ChapterDetailView() {
   }, [chapter?.id]);
 
   const chapterDirty = Boolean(chapter) && !arePlanningStatesEqual(planning, persistedPlanning);
-  const dirtyAreas = chapterDirty ? (["planning"] as const) : [];
+  const dirtyAreas = useMemo<WorkspaceDirtyArea[]>(
+    () => (chapterDirty ? ["planning"] : []),
+    [chapterDirty],
+  );
   const canSave = planning.title.trim().length > 0;
-
-  useLayoutEffect(() => {
-    if (!chapter) {
-      setWorkspaceSession(null);
-      return;
-    }
-
-    setWorkspaceSession({
-      kind: "chapter",
-      entityId: chapter.id,
-      entityTitle: planning.title.trim() || chapter.title,
-      dirtyAreas: [...dirtyAreas],
-      saveChanges: saveCurrentWorkspaceChanges,
-      discardChanges: discardCurrentWorkspaceChanges,
-    });
-  }, [chapter, dirtyAreas, planning.title, setWorkspaceSession]);
 
   useLayoutEffect(() => {
     if (!chapter) {
@@ -623,6 +610,43 @@ export function ChapterDetailView() {
     setPlanning(persistedPlanning);
   }
 
+  const workspaceSaveActionRef = useRef(saveCurrentWorkspaceChanges);
+  const workspaceDiscardActionRef = useRef(discardCurrentWorkspaceChanges);
+  workspaceSaveActionRef.current = saveCurrentWorkspaceChanges;
+  workspaceDiscardActionRef.current = discardCurrentWorkspaceChanges;
+
+  const handleWorkspaceSessionSave = useCallback(
+    () => workspaceSaveActionRef.current(),
+    [],
+  );
+  const handleWorkspaceSessionDiscard = useCallback(
+    () => workspaceDiscardActionRef.current(),
+    [],
+  );
+
+  useLayoutEffect(() => {
+    if (!chapter) {
+      setWorkspaceSession(null);
+      return;
+    }
+
+    setWorkspaceSession({
+      kind: "chapter",
+      entityId: chapter.id,
+      entityTitle: planning.title.trim() || chapter.title,
+      dirtyAreas,
+      saveChanges: handleWorkspaceSessionSave,
+      discardChanges: handleWorkspaceSessionDiscard,
+    });
+  }, [
+    chapter,
+    dirtyAreas,
+    handleWorkspaceSessionDiscard,
+    handleWorkspaceSessionSave,
+    planning.title,
+    setWorkspaceSession,
+  ]);
+
   async function handleSaveChapter() {
     await saveCurrentWorkspaceChanges();
   }
@@ -827,7 +851,7 @@ export function ChapterDetailView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-4 xl:grid-cols-[minmax(340px,0.9fr)_minmax(0,1.1fr)]">
+    <div className="grid h-full min-h-0 gap-[var(--workbench-editor-gap)] xl:grid-cols-[minmax(280px,0.72fr)_minmax(0,1.28fr)]">
       <Panel
         ref={chapterJumpHighlightRef}
         tabIndex={-1}
@@ -1002,7 +1026,7 @@ export function ChapterDetailView() {
           }
         />
 
-        <div className="mt-6 grid gap-4 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+        <div className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
           <Panel className="bg-[var(--surface-elevated)] shadow-none">
             <div className="flex items-center gap-2 text-[var(--accent)]">
               <Target className="size-4" />
@@ -1171,7 +1195,7 @@ export function ChapterDetailView() {
                         </div>
                       ) : null}
 
-                      <div className="grid gap-3 lg:grid-cols-2">
+                      <div className="grid gap-3 xl:grid-cols-2">
                         <Field label="Scene Title">
                           <Input
                             value={proposal.title}
@@ -1215,7 +1239,7 @@ export function ChapterDetailView() {
                         </Field>
                       </div>
 
-                      <div className="grid gap-3 text-sm text-[var(--ink-muted)] lg:grid-cols-2">
+                      <div className="grid gap-3 text-sm text-[var(--ink-muted)] xl:grid-cols-2">
                         <div>
                           <p className="font-semibold text-[var(--ink)]">Outcome</p>
                           <p className="mt-1">{proposal.outcome || "Not provided."}</p>
@@ -1331,7 +1355,7 @@ export function ChapterDetailView() {
                     </div>
                   </div>
 
-                  <div className="mt-4 grid gap-3 text-sm text-[var(--ink-muted)] lg:grid-cols-2">
+                  <div className="mt-4 grid gap-3 text-sm text-[var(--ink-muted)] xl:grid-cols-2">
                     <div>
                       <p className="font-semibold text-[var(--ink)]">Scene purpose</p>
                       <p className="mt-1">{scene.purpose || "Not defined yet."}</p>

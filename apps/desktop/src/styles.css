@@ -28,6 +28,14 @@
   --success: #89d185;
   --success-surface: rgba(137, 209, 133, 0.12);
   --sand: #3794ff;
+  --workbench-activity-width: 52px;
+  --workbench-explorer-width: clamp(240px, 18vw, 272px);
+  --workbench-ai-panel-width: clamp(300px, 22vw, 336px);
+  --workbench-editor-min-width: 36rem;
+  --workbench-editor-padding: 14px;
+  --workbench-editor-gap: 14px;
+  --workbench-editor-sidebar-width: clamp(280px, 24vw, 336px);
+  --workbench-editor-context-width: clamp(280px, 24vw, 320px);
   --background: var(--app-bg);
   --panel: var(--panel-bg);
   --ink: var(--text-primary);

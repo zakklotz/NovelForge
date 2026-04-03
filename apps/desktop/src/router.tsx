@@ -1,9 +1,11 @@
+import { useEffect } from "react";
 import {
   Outlet,
   RouterProvider,
   createRootRoute,
   createRoute,
   createRouter,
+  useParams,
 } from "@tanstack/react-router";
 import { ProjectGate } from "@/features/project/ProjectGate";
 import { ChaptersView } from "@/features/chapters/ChaptersView";
@@ -15,6 +17,7 @@ import { SuggestionsView } from "@/features/suggestions/SuggestionsView";
 import { SettingsView } from "@/features/settings/SettingsView";
 import { ScratchpadView } from "@/features/scratchpad/ScratchpadView";
 import { StoryOverviewView } from "@/features/story/StoryOverviewView";
+import { useUiStore } from "@/store/uiStore";
 
 function RootLayout() {
   return (
@@ -26,6 +29,28 @@ function RootLayout() {
 
 function IndexRouteComponent() {
   return <ChaptersView />;
+}
+
+function CharacterDetailRouteComponent() {
+  const { characterId } = useParams({ from: "/characters/$characterId" });
+  const setSelectedCharacterId = useUiStore((state) => state.setSelectedCharacterId);
+
+  useEffect(() => {
+    setSelectedCharacterId(characterId);
+  }, [characterId, setSelectedCharacterId]);
+
+  return <CharactersView />;
+}
+
+function SuggestionDetailRouteComponent() {
+  const { suggestionId } = useParams({ from: "/suggestions/$suggestionId" });
+  const setSelectedSuggestionId = useUiStore((state) => state.setSelectedSuggestionId);
+
+  useEffect(() => {
+    setSelectedSuggestionId(suggestionId);
+  }, [setSelectedSuggestionId, suggestionId]);
+
+  return <SuggestionsView />;
 }
 
 const rootRoute = createRootRoute({
@@ -74,10 +99,22 @@ const charactersRoute = createRoute({
   component: CharactersView,
 });
 
+const characterDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "characters/$characterId",
+  component: CharacterDetailRouteComponent,
+});
+
 const suggestionsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "suggestions",
   component: SuggestionsView,
+});
+
+const suggestionDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "suggestions/$suggestionId",
+  component: SuggestionDetailRouteComponent,
 });
 
 const scratchpadRoute = createRoute({
@@ -100,7 +137,9 @@ const routeTree = rootRoute.addChildren([
   scenesRoute,
   sceneWorkspaceRoute,
   charactersRoute,
+  characterDetailRoute,
   suggestionsRoute,
+  suggestionDetailRoute,
   scratchpadRoute,
   settingsRoute,
 ]);

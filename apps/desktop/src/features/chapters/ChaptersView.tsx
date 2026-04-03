@@ -175,8 +175,8 @@ export function ChaptersView() {
   }
 
   return (
-    <div className="grid h-full min-h-0 gap-3 xl:grid-cols-[minmax(0,0.95fr)_minmax(320px,0.8fr)]">
-      <Panel className="min-h-0">
+    <div className="grid h-full min-h-0 gap-[var(--workbench-editor-gap)] xl:grid-cols-[minmax(260px,0.72fr)_minmax(0,1.28fr)]">
+      <Panel className="min-h-0 overflow-y-auto">
         <SectionHeading
           title="Chapters"
           description="Reorder the story spine here, then open any chapter workspace to plan its purpose, summary, and scene composition."
@@ -228,7 +228,7 @@ export function ChaptersView() {
         </div>
       </Panel>
 
-      <Panel className="h-full">
+      <Panel className="h-full overflow-y-auto">
         <SectionHeading
           title={selectedChapter ? selectedChapter.title : "Chapter Planning"}
           description="Use chapter workspaces as the planning layer above scenes so structure stays visible before prose takes over."

@@ -1,86 +1,64 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  Activity,
-  BookCopy,
-  ListOrdered,
-  MessageSquareText,
-  Search,
-  Settings2,
-  Sparkles,
-  Theater,
-  Users,
-} from "lucide-react";
+import { Activity, CircleDot, X } from "lucide-react";
 import type { DomainEvent, ProjectSnapshot, Suggestion } from "@novelforge/domain";
 import { useShallow } from "zustand/react/shallow";
-import { Button, EmptyState, Input, ListRow, Panel, TabButton } from "@/components/ui";
-import { normalizeProjectRoute, shouldPersistProjectRoute } from "@/lib/routes";
-import { tauriApi } from "@/lib/tauri";
-import { cn, formatRelativeTimestamp } from "@/lib/utils";
+import { EmptyState } from "@/components/ui";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { useUiStore } from "@/store/uiStore";
+import { normalizeProjectRoute, resolveProjectRouteNavigation, shouldPersistProjectRoute } from "@/lib/routes";
+import { tauriApi } from "@/lib/tauri";
+import { cn } from "@/lib/utils";
+import {
+  useUiStore,
+  type WorkbenchActivityId,
+  type WorkbenchTab,
+} from "@/store/uiStore";
 import { SceneWorkspaceLeavePrompt } from "./SceneWorkspaceLeavePrompt";
+import { WorkbenchActivityBar } from "./WorkbenchActivityBar";
+import { WorkbenchAiPanel } from "./WorkbenchAiPanel";
+import { WorkbenchExplorerPanel } from "./WorkbenchExplorerPanel";
+import {
+  buildWorkbenchTab,
+  getWorkbenchActivityForTabKind,
+  getWorkbenchDocumentMeta,
+} from "./workbench";
 
-type StoryDomain = "story" | "chapters" | "scenes" | "characters" | "suggestions";
+function isTabDirty(
+  tab: WorkbenchTab,
+  workspaceSession: ReturnType<typeof useUiStore.getState>["workspaceSession"],
+) {
+  if (!workspaceSession || workspaceSession.dirtyAreas.length === 0) {
+    return false;
+  }
 
-const storyDomainTabs: Array<{
-  domain: StoryDomain;
-  to: "/story" | "/chapters" | "/scenes" | "/characters" | "/suggestions";
-  label: string;
-  icon: typeof BookCopy;
-}> = [
-  { domain: "story", to: "/story", label: "Story", icon: ListOrdered },
-  { domain: "chapters", to: "/chapters", label: "Chapters", icon: BookCopy },
-  { domain: "scenes", to: "/scenes", label: "Scenes", icon: Theater },
-  { domain: "characters", to: "/characters", label: "Characters", icon: Users },
-  { domain: "suggestions", to: "/suggestions", label: "Suggestions", icon: Sparkles },
-];
+  if (workspaceSession.kind === "story") {
+    return tab.kind === "story";
+  }
 
-const utilityNavigationItems = [
-  { to: "/scratchpad", label: "Scratchpad", icon: MessageSquareText },
-  { to: "/settings", label: "Settings", icon: Settings2 },
-];
+  if (workspaceSession.kind === "chapter") {
+    return tab.kind === "chapter" && tab.entityId === workspaceSession.entityId;
+  }
 
-function getStoryDomainFromPath(pathname: string): StoryDomain | null {
-  if (pathname.startsWith("/story")) {
-    return "story";
-  }
-  if (pathname.startsWith("/chapters")) {
-    return "chapters";
-  }
-  if (pathname.startsWith("/scenes")) {
-    return "scenes";
-  }
-  if (pathname.startsWith("/characters")) {
-    return "characters";
-  }
-  if (pathname.startsWith("/suggestions")) {
-    return "suggestions";
-  }
-  return null;
+  return tab.kind === "scene" && tab.entityId === workspaceSession.entityId;
 }
 
-function buildOrderedScenes(snapshot: ProjectSnapshot) {
-  const chapterOrder = new Map(
-    [...snapshot.chapters]
-      .sort((a, b) => a.orderIndex - b.orderIndex)
-      .map((chapter, index) => [chapter.id, index]),
-  );
+function navigateToResolvedRoute(
+  navigate: ReturnType<typeof useNavigate>,
+  target: ReturnType<typeof resolveProjectRouteNavigation>,
+) {
+  if (
+    target.to === "/chapters/$chapterId" ||
+    target.to === "/scenes/$sceneId" ||
+    target.to === "/characters/$characterId" ||
+    target.to === "/suggestions/$suggestionId"
+  ) {
+    return navigate({
+      to: target.to,
+      params: target.params,
+    });
+  }
 
-  return [...snapshot.scenes].sort((left, right) => {
-    const leftChapterOrder =
-      left.chapterId === null ? Number.MAX_SAFE_INTEGER : chapterOrder.get(left.chapterId) ?? 0;
-    const rightChapterOrder =
-      right.chapterId === null
-        ? Number.MAX_SAFE_INTEGER
-        : chapterOrder.get(right.chapterId) ?? 0;
-
-    return (
-      leftChapterOrder - rightChapterOrder ||
-      left.orderIndex - right.orderIndex ||
-      left.title.localeCompare(right.title)
-    );
-  });
+  return navigate({ to: target.to });
 }
 
 export function AppShell({
@@ -90,27 +68,59 @@ export function AppShell({
   snapshot: ProjectSnapshot | null;
   children: React.ReactNode;
 }) {
+  const workbenchShellColumns = [
+    "var(--workbench-activity-width)",
+    "var(--workbench-explorer-width)",
+    "minmax(var(--workbench-editor-min-width), 1fr)",
+    "var(--workbench-ai-panel-width)",
+  ].join(" ");
   const navigate = useNavigate();
   const location = useRouterState({ select: (state) => state.location.pathname });
   const { refreshSnapshot, queueAnalysis, saveProjectState } = useProjectRuntime();
-  const [searchText, setSearchText, queue, isAnalyzing, dequeueAnalysis, setIsAnalyzing] =
-    useUiStore(useShallow((state) => [
+  const [
+    searchText,
+    setSearchText,
+    queue,
+    isAnalyzing,
+    dequeueAnalysis,
+    setIsAnalyzing,
+    workbenchActivity,
+    setWorkbenchActivity,
+    editorTabs,
+    activeEditorTabId,
+    openEditorTab,
+    closeEditorTab,
+    setActiveEditorTab,
+    setEditorTabs,
+    setSelectedChapterId,
+    setSelectedCharacterId,
+    setSelectedSuggestionId,
+    workspaceSession,
+    setPendingWorkspaceAction,
+  ] = useUiStore(
+    useShallow((state) => [
       state.searchText,
       state.setSearchText,
       state.analysisQueue,
       state.isAnalyzing,
       state.dequeueAnalysis,
       state.setIsAnalyzing,
-    ]));
-  const [selectedChapterId, setSelectedChapterId, selectedCharacterId, setSelectedCharacterId] =
-    useUiStore(useShallow((state) => [
-      state.selectedChapterId,
+      state.workbenchActivity,
+      state.setWorkbenchActivity,
+      state.editorTabs,
+      state.activeEditorTabId,
+      state.openEditorTab,
+      state.closeEditorTab,
+      state.setActiveEditorTab,
+      state.setEditorTabs,
       state.setSelectedChapterId,
-      state.selectedCharacterId,
       state.setSelectedCharacterId,
-    ]));
+      state.setSelectedSuggestionId,
+      state.workspaceSession,
+      state.setPendingWorkspaceAction,
+    ]),
+  );
   const workerRef = useRef<Worker | null>(null);
-  const [storyBrowserDomain, setStoryBrowserDomain] = useState<StoryDomain>("chapters");
 
   useEffect(() => {
     workerRef.current = new Worker(
@@ -169,13 +179,6 @@ export function AppShell({
   ]);
 
   useEffect(() => {
-    const routeDomain = getStoryDomainFromPath(location);
-    if (routeDomain) {
-      setStoryBrowserDomain(routeDomain);
-    }
-  }, [location]);
-
-  useEffect(() => {
     if (!snapshot || !shouldPersistProjectRoute(location)) {
       return;
     }
@@ -191,348 +194,259 @@ export function AppShell({
     }).catch(() => undefined);
   }, [location, saveProjectState, snapshot]);
 
-  const chapters = snapshot
-    ? [...snapshot.chapters].sort((a, b) => a.orderIndex - b.orderIndex)
-    : [];
-  const orderedScenes = snapshot ? buildOrderedScenes(snapshot) : [];
-  const activeSceneId = location.startsWith("/scenes/") ? location.split("/")[2] ?? null : null;
-  const activeChapterId =
-    location.startsWith("/chapters/") ? location.split("/")[2] ?? selectedChapterId : selectedChapterId;
-  const chapterSceneCounts = snapshot
-    ? snapshot.scenes.reduce<Record<string, number>>((counts, scene) => {
-        if (scene.chapterId) {
-          counts[scene.chapterId] = (counts[scene.chapterId] ?? 0) + 1;
-        }
-        return counts;
-      }, {})
-    : {};
-  const unassignedSceneCount = snapshot
-    ? snapshot.scenes.filter((scene) => scene.chapterId === null).length
-    : 0;
+  const routeTab = useMemo(() => buildWorkbenchTab(location), [location]);
+
+  useEffect(() => {
+    if (!routeTab) {
+      setActiveEditorTab(null);
+      return;
+    }
+
+    openEditorTab(routeTab);
+    setWorkbenchActivity(getWorkbenchActivityForTabKind(routeTab.kind));
+
+    if (routeTab.kind === "chapter" && routeTab.entityId) {
+      setSelectedChapterId(routeTab.entityId);
+    }
+
+    if (routeTab.kind === "character" && routeTab.entityId) {
+      setSelectedCharacterId(routeTab.entityId);
+    }
+
+    if (routeTab.kind === "suggestion" && routeTab.entityId) {
+      setSelectedSuggestionId(routeTab.entityId);
+    }
+  }, [
+    openEditorTab,
+    routeTab,
+    setActiveEditorTab,
+    setSelectedChapterId,
+    setSelectedCharacterId,
+    setSelectedSuggestionId,
+    setWorkbenchActivity,
+  ]);
+
+  useEffect(() => {
+    if (!snapshot || editorTabs.length === 0) {
+      return;
+    }
+
+    const nextTabs = editorTabs.filter((tab) => {
+      if (tab.kind === "settings") {
+        return true;
+      }
+
+      return getWorkbenchDocumentMeta(tab, snapshot) !== null;
+    });
+
+    if (nextTabs.length !== editorTabs.length) {
+      setEditorTabs(nextTabs);
+    }
+  }, [editorTabs, setEditorTabs, snapshot]);
+
+  const activeTab =
+    editorTabs.find((tab) => tab.id === activeEditorTabId) ?? routeTab ?? null;
+  const activeMeta = getWorkbenchDocumentMeta(activeTab, snapshot);
   const openSuggestionsCount = snapshot
     ? snapshot.suggestions.filter((suggestion) => suggestion.status === "open").length
     : 0;
+  const tabPresentations = useMemo(
+    () =>
+      editorTabs
+        .map((tab) => ({
+          tab,
+          meta: getWorkbenchDocumentMeta(tab, snapshot),
+        }))
+        .filter(
+          (
+            item,
+          ): item is {
+            tab: WorkbenchTab;
+            meta: NonNullable<ReturnType<typeof getWorkbenchDocumentMeta>>;
+          } => item.meta !== null,
+        ),
+    [editorTabs, snapshot],
+  );
 
-  function renderStoryBrowser() {
+  async function handleOpenWorkbenchRoute(pathname: string) {
+    const target = snapshot
+      ? resolveProjectRouteNavigation(pathname, snapshot)
+      : resolveProjectRouteNavigation(pathname);
+
+    await navigateToResolvedRoute(navigate, target);
+  }
+
+  function handleSelectActivity(activity: WorkbenchActivityId) {
+    setWorkbenchActivity(activity);
+
     if (!snapshot) {
-      return (
-        <div className="rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-3 py-4 text-[13px] text-[var(--ink-muted)]">
-          Open a project to browse chapters, scenes, characters, and suggestions in
-          story order.
-        </div>
-      );
+      return;
     }
 
-    if (storyBrowserDomain === "story" || storyBrowserDomain === "chapters") {
-      return chapters.length > 0 ? (
-        <div className="grid gap-2">
-          {chapters.map((chapter) => {
-            const isActive = location.startsWith(`/chapters/${chapter.id}`) || activeChapterId === chapter.id;
-            return (
-              <ListRow
-                key={chapter.id}
-                active={isActive}
-                className="rounded-[4px]"
-                onClick={() => {
-                  setSelectedChapterId(chapter.id);
-                  void navigate({
-                    to: "/chapters/$chapterId",
-                    params: { chapterId: chapter.id },
-                  });
-                }}
-              >
-                <div className="min-w-0">
-                <p className="truncate text-[13px] font-medium">{chapter.title}</p>
-                <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                  {chapterSceneCounts[chapter.id] ?? 0} scene
-                  {(chapterSceneCounts[chapter.id] ?? 0) === 1 ? "" : "s"}
-                </p>
-                </div>
-              </ListRow>
-            );
-          })}
-        </div>
-      ) : (
-        <EmptyState
-          title="No chapters yet"
-          description="Create the first chapter to start building the story spine."
-        />
-      );
+    if (activity === "story") {
+      void handleOpenWorkbenchRoute("/story");
+      return;
     }
 
-    if (storyBrowserDomain === "scenes") {
-      return orderedScenes.length > 0 ? (
-        <div className="grid gap-2">
-          {orderedScenes.map((scene) => {
-            const chapterTitle =
-              snapshot.chapters.find((chapter) => chapter.id === scene.chapterId)?.title ??
-              "Unassigned";
-            const isActive = activeSceneId === scene.id;
-
-            return (
-              <ListRow
-                key={scene.id}
-                active={isActive}
-                className="rounded-[4px]"
-                onClick={() =>
-                  void navigate({
-                    to: "/scenes/$sceneId",
-                    params: { sceneId: scene.id },
-                  })
-                }
-              >
-                <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium">{scene.title}</p>
-                  <p className="mt-1 text-[11px] text-[var(--ink-faint)]">{chapterTitle}</p>
-                </div>
-              </ListRow>
-            );
-          })}
-          {unassignedSceneCount > 0 ? (
-            <p className="px-3 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
-              {unassignedSceneCount} unassigned scene
-              {unassignedSceneCount === 1 ? "" : "s"}
-            </p>
-          ) : null}
-        </div>
-      ) : (
-        <EmptyState
-          title="No scenes yet"
-          description="Add a scene and it will appear here in chapter order."
-        />
-      );
+    if (activity === "suggestions") {
+      void handleOpenWorkbenchRoute("/suggestions");
+      return;
     }
 
-    if (storyBrowserDomain === "characters") {
-      return snapshot.characters.length > 0 ? (
-        <div className="grid gap-2">
-          {[...snapshot.characters]
-            .sort((left, right) => left.name.localeCompare(right.name))
-            .map((character) => {
-              const isActive =
-                location.startsWith("/characters") && selectedCharacterId === character.id;
-
-              return (
-                <ListRow
-                  key={character.id}
-                  active={isActive}
-                  className="rounded-[4px]"
-                  onClick={() => {
-                    setSelectedCharacterId(character.id);
-                    void navigate({ to: "/characters" });
-                  }}
-                >
-                  <div className="min-w-0">
-                  <p className="truncate text-[13px] font-medium">{character.name}</p>
-                  <p className="mt-1 text-[11px] text-[var(--ink-faint)]">
-                    {character.role || "No role set yet"}
-                  </p>
-                  </div>
-                </ListRow>
-              );
-            })}
-        </div>
-      ) : (
-        <EmptyState
-          title="No characters yet"
-          description="Character cards will collect here as the cast takes shape."
-        />
-      );
+    if (activity === "characters") {
+      void handleOpenWorkbenchRoute("/characters");
+      return;
     }
 
-    const orderedSuggestions = [...snapshot.suggestions].sort((left, right) =>
-      left.status === right.status
-        ? left.updatedAt.localeCompare(right.updatedAt)
-        : left.status.localeCompare(right.status),
-    );
+    if (activity === "ai") {
+      void handleOpenWorkbenchRoute("/scratchpad");
+    }
+  }
 
-    return orderedSuggestions.length > 0 ? (
-      <div className="grid gap-2">
-        {orderedSuggestions.map((suggestion) => (
-          <ListRow
-            key={suggestion.id}
-            className="rounded-[4px]"
-            onClick={() => void navigate({ to: "/suggestions" })}
-          >
-            <div className="min-w-0">
-            <p className="truncate text-[13px] font-medium">{suggestion.title}</p>
-            <p className="mt-1 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
-              {suggestion.status}
-            </p>
-            </div>
-          </ListRow>
-        ))}
-      </div>
-    ) : (
-      <EmptyState
-        title="No suggestions yet"
-        description="Continuity and structure signals will collect here after story changes."
-      />
-    );
+  function handleOpenSettings() {
+    void handleOpenWorkbenchRoute("/settings");
+  }
+
+  function handleActivateTab(tab: WorkbenchTab) {
+    setActiveEditorTab(tab.id);
+    void handleOpenWorkbenchRoute(tab.route);
+  }
+
+  async function handleCloseTab(tabId: string) {
+    if (editorTabs.length <= 1) {
+      return;
+    }
+
+    const closingIndex = editorTabs.findIndex((tab) => tab.id === tabId);
+    if (closingIndex === -1) {
+      return;
+    }
+
+    if (activeTab?.id !== tabId) {
+      closeEditorTab(tabId);
+      return;
+    }
+
+    const fallbackTab = editorTabs[closingIndex + 1] ?? editorTabs[closingIndex - 1] ?? null;
+    if (!fallbackTab) {
+      return;
+    }
+
+    const runClose = async () => {
+      await handleOpenWorkbenchRoute(fallbackTab.route);
+      closeEditorTab(tabId);
+    };
+
+    if (workspaceSession && workspaceSession.dirtyAreas.length > 0) {
+      setPendingWorkspaceAction({
+        targetLabel: "close this tab",
+        runAction: runClose,
+      });
+      return;
+    }
+
+    await runClose();
   }
 
   return (
-    <div className="min-h-screen bg-[var(--background)] p-3 text-[var(--ink)]">
-      <div className="grid min-h-[calc(100vh-1.5rem)] grid-cols-1 gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
-        <aside className="flex min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--sidebar-bg)]">
-          <div className="border-b border-[var(--border)] px-4 py-4">
-            <p className="text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
-              Workspace
-            </p>
-            <h1 className="mt-2 text-base font-semibold text-[var(--ink)]">
-              {snapshot ? snapshot.project.title : "NovelForge"}
-            </h1>
-            <p className="mt-2 text-[13px] text-[var(--ink-muted)]">
-              {snapshot
-                ? snapshot.project.logline ||
-                  snapshot.project.premise ||
-                  "Add a story brief to sharpen the planning spine."
-                : "Local-first story workspace for chapters, scenes, characters, and structured revision support."}
-            </p>
-            {snapshot ? (
-              <p className="mt-3 text-[11px] text-[var(--ink-faint)]">
-                Last opened {formatRelativeTimestamp(snapshot.project.lastOpenedAt)}
-              </p>
-            ) : (
-              <p className="mt-3 text-[11px] text-[var(--ink-faint)]">
-                Use File to create or open a project.
-              </p>
-            )}
-          </div>
+    <div className="h-screen overflow-hidden bg-[var(--background)] p-3 text-[var(--ink)]">
+      <div
+        className="grid h-full overflow-hidden rounded-[10px] border border-[var(--border)] bg-[var(--content-bg)]"
+        style={{ gridTemplateColumns: workbenchShellColumns }}
+      >
+        <WorkbenchActivityBar
+          activeActivity={workbenchActivity}
+          hasProject={Boolean(snapshot)}
+          onSelectActivity={handleSelectActivity}
+          onOpenSettings={handleOpenSettings}
+          isSettingsActive={location === "/settings"}
+        />
 
-          <div className="flex min-h-0 flex-1 flex-col px-3 py-3">
-            <div className="border-b border-[var(--border)] pb-3">
-            <p className="px-1 text-[11px] uppercase tracking-[0.12em] text-[var(--ink-faint)]">
-              Story Browser
-            </p>
-            <div className="mt-2 grid grid-cols-2 gap-1">
-              {storyDomainTabs.map((item) => {
-                const Icon = item.icon;
-                const isActive = storyBrowserDomain === item.domain;
+        <WorkbenchExplorerPanel
+          snapshot={snapshot}
+          activity={workbenchActivity}
+          currentRoute={location}
+          searchText={searchText}
+          onSearchTextChange={setSearchText}
+          onOpenRoute={(pathname) => {
+            void handleOpenWorkbenchRoute(pathname);
+          }}
+          onRunFullScan={() =>
+            queueAnalysis({
+              id: crypto.randomUUID(),
+              projectId: snapshot?.project.id ?? "",
+              occurredAt: new Date().toISOString(),
+              type: "analysis.manualRequested",
+            }).catch(() => undefined)
+          }
+          isAnalyzing={isAnalyzing}
+          openSuggestionsCount={openSuggestionsCount}
+        />
+
+        <section className="flex min-h-0 min-w-0 flex-col bg-[var(--content-bg)]">
+          <div className="flex items-center gap-1 overflow-x-auto border-b border-[var(--border)] bg-[var(--panel)] px-[var(--workbench-editor-padding)] py-2">
+            {tabPresentations.length > 0 ? (
+              tabPresentations.map(({ tab, meta }) => {
+                const active = activeTab?.id === tab.id;
+                const dirty = isTabDirty(tab, workspaceSession);
+
                 return (
-                  <TabButton
-                    key={item.to}
-                    active={isActive}
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => handleActivateTab(tab)}
                     className={cn(
-                      "justify-start",
-                      !snapshot &&
-                        "cursor-not-allowed opacity-60 hover:bg-transparent hover:text-[var(--ink-muted)]",
+                      "group inline-flex h-9 shrink-0 items-center gap-2 rounded-[6px] border px-3 text-[12px] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]",
+                      active
+                        ? "border-[var(--border-strong)] bg-[var(--surface-elevated)] text-[var(--ink)]"
+                        : "border-transparent bg-transparent text-[var(--ink-muted)] hover:bg-[var(--hover)] hover:text-[var(--ink)]",
                     )}
-                    onClick={() => {
-                      if (!snapshot) {
-                        return;
-                      }
-                      setStoryBrowserDomain(item.domain);
-                      void navigate({ to: item.to });
-                    }}
-                    disabled={!snapshot}
                   >
-                    <Icon className="size-4" />
-                    {item.label}
-                  </TabButton>
+                    {dirty ? (
+                      <CircleDot className="size-3.5 text-[var(--warning)]" />
+                    ) : (
+                      <Activity className="size-3.5 text-[var(--ink-faint)]" />
+                    )}
+                    <span className="max-w-48 truncate">{meta.shortTitle}</span>
+                    <span
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void handleCloseTab(tab.id);
+                      }}
+                      className={cn(
+                        "inline-flex size-4 items-center justify-center rounded-[4px] text-[var(--ink-faint)] transition hover:bg-[var(--hover)] hover:text-[var(--ink)]",
+                        editorTabs.length <= 1 && "pointer-events-none opacity-30",
+                      )}
+                    >
+                      <X className="size-3.5" />
+                    </span>
+                  </button>
                 );
-              })}
-            </div>
-            </div>
-            <div className="min-h-0 flex-1 overflow-y-auto py-3">
-              <div className="grid gap-1">{renderStoryBrowser()}</div>
-            </div>
-          </div>
-
-          <nav className="grid gap-1 border-t border-[var(--border)] px-3 py-3">
-            {utilityNavigationItems.map((item) => {
-              const Icon = item.icon;
-              const isActive =
-                location === item.to || location.startsWith(`${item.to}/`);
-              const disabled = !snapshot && item.to !== "/settings";
-              return (
-                <ListRow
-                  key={item.to}
-                  active={isActive}
-                  className={cn(
-                    "items-center rounded-[4px]",
-                    disabled &&
-                      "cursor-not-allowed opacity-50 hover:bg-transparent hover:text-[var(--ink-muted)]",
-                  )}
-                  onClick={() => {
-                    if (disabled) {
-                      return;
-                    }
-                    void navigate({ to: item.to });
-                  }}
-                  disabled={disabled}
-                >
-                  <Icon className="size-4" />
-                  {item.label}
-                </ListRow>
-              );
-            })}
-          </nav>
-
-          {snapshot ? (
-            <div className="border-t border-[var(--border)] p-3">
-            <Panel className="bg-[var(--panel-bg)] p-3">
-              <div className="flex items-center gap-3">
-                <Activity className="size-4 text-[var(--accent)]" />
-                <div>
-                  <p className="text-[13px] font-semibold text-[var(--ink)]">Analysis Engine</p>
-                  <p className="text-[11px] text-[var(--ink-faint)]">
-                    {isAnalyzing
-                      ? "Reviewing recent story changes..."
-                      : `${openSuggestionsCount} open suggestions`}
-                  </p>
-                </div>
-              </div>
-            </Panel>
-            </div>
-          ) : null}
-        </aside>
-
-        <div className="flex min-h-0 flex-col rounded-[8px] border border-[var(--border)] bg-[var(--content-bg)]">
-          <header className="grid gap-3 border-b border-[var(--border)] px-4 py-3 xl:grid-cols-[minmax(0,1fr)_auto]">
-            {snapshot ? (
-              <>
-                <div className="flex items-center gap-2 rounded-[4px] border border-[var(--border)] bg-[var(--input-bg)] px-3">
-                  <Search className="size-4 text-[var(--ink-faint)]" />
-                  <Input
-                    className="border-none bg-transparent px-0 focus:border-none focus:ring-0 hover:border-transparent"
-                    placeholder="Quick filter chapters, scenes, and characters"
-                    value={searchText}
-                    onChange={(event) => setSearchText(event.target.value)}
-                  />
-                </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <Button
-                    variant="secondary"
-                    onClick={() =>
-                      queueAnalysis({
-                        id: crypto.randomUUID(),
-                        projectId: snapshot.project.id,
-                        occurredAt: new Date().toISOString(),
-                        type: "analysis.manualRequested",
-                      }).catch(() => undefined)
-                    }
-                  >
-                    Run Full Scan
-                  </Button>
-                </div>
-              </>
+              })
             ) : (
-              <div className="space-y-1">
-                <h2 className="text-[15px] font-semibold text-[var(--ink)]">
-                  Structured Story Workspace
-                </h2>
-                <p className="max-w-2xl text-[13px] text-[var(--ink-muted)]">
-                  Start from a local .novelforge file, then work in chapters,
-                  scenes, characters, and suggestions without leaving the desktop
-                  app.
-                </p>
+              <div className="flex h-9 items-center px-2 text-[12px] text-[var(--ink-faint)]">
+                No open tabs
               </div>
             )}
-          </header>
+          </div>
 
-          <main className="min-h-0 flex-1 overflow-hidden p-3">{children}</main>
-        </div>
+          <main className="min-h-0 flex-1 overflow-hidden p-[var(--workbench-editor-padding)]">
+            {tabPresentations.length === 0 && snapshot ? (
+              <EmptyState
+                title="Open a resource"
+                description="Select a chapter, scene, character, or suggestion from the explorer to open it in the editor workspace."
+              />
+            ) : (
+              children
+            )}
+          </main>
+        </section>
+
+        <WorkbenchAiPanel
+          snapshotProjectId={snapshot?.project.id ?? null}
+          activeTab={activeTab}
+          activeMeta={activeMeta}
+        />
       </div>
       <SceneWorkspaceLeavePrompt />
     </div>
