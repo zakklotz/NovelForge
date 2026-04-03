@@ -33,7 +33,12 @@ import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
 import { useUiStore } from "@/store/uiStore";
-import { cn, splitCommaSeparated, splitLines } from "@/lib/utils";
+import {
+  cn,
+  scrollIntoViewWithAccessibleMotion,
+  splitCommaSeparated,
+  splitLines,
+} from "@/lib/utils";
 import type {
   ProjectSnapshot,
   Scene,
@@ -804,6 +809,7 @@ export function SceneWorkspaceView() {
   const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
   const sceneJumpHighlightRef = useRef<HTMLElement | null>(null);
   const [isJumpHighlighted, setIsJumpHighlighted] = useState(false);
+  const [jumpAnnouncement, setJumpAnnouncement] = useState("");
 
   useEffect(() => {
     currentSceneRef.current = scene ?? null;
@@ -1116,18 +1122,18 @@ export function SceneWorkspaceView() {
     }
 
     setIsJumpHighlighted(true);
+    setJumpAnnouncement(`Jumped to scene ${scene.title}.`);
     setDiagnosticJumpHighlight(null);
 
     const highlightNode = sceneJumpHighlightRef.current;
     if (highlightNode) {
-      if (typeof highlightNode.scrollIntoView === "function") {
-        highlightNode.scrollIntoView({ block: "start", behavior: "smooth" });
-      }
+      scrollIntoViewWithAccessibleMotion(highlightNode, { block: "start" });
       highlightNode.focus({ preventScroll: true });
     }
 
     const timeoutId = window.setTimeout(() => {
       setIsJumpHighlighted(false);
+      setJumpAnnouncement("");
     }, 1800);
 
     return () => window.clearTimeout(timeoutId);
@@ -1455,6 +1461,9 @@ export function SceneWorkspaceView() {
           isJumpHighlighted ? "ring-2 ring-[var(--focus-ring)]" : null,
         )}
       >
+        <p aria-live="polite" aria-atomic="true" className="sr-only">
+          {jumpAnnouncement}
+        </p>
         <SectionHeading
           title="Scene Frame"
           description="Keep the scene's title, cast pressure, and continuity anchored while you plan and draft."

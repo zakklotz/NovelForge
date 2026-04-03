@@ -28,3 +28,29 @@ export function formatRelativeTimestamp(value: string | null | undefined) {
 
   return date.toLocaleString();
 }
+
+export function prefersReducedMotion() {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(prefers-reduced-motion: reduce)").matches
+  );
+}
+
+export function getAccessibleScrollBehavior(): ScrollBehavior {
+  return prefersReducedMotion() ? "auto" : "smooth";
+}
+
+export function scrollIntoViewWithAccessibleMotion(
+  element: { scrollIntoView?: (options?: ScrollIntoViewOptions) => void } | null | undefined,
+  options: Omit<ScrollIntoViewOptions, "behavior"> = {},
+) {
+  if (!element || typeof element.scrollIntoView !== "function") {
+    return;
+  }
+
+  element.scrollIntoView({
+    behavior: getAccessibleScrollBehavior(),
+    ...options,
+  });
+}

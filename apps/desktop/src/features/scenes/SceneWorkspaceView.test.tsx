@@ -321,6 +321,50 @@ describe("Scene workspace unsaved change protection", () => {
     return result;
   }
 
+  it("uses reduced-motion scrolling and announces the destination when a diagnostic jump lands", async () => {
+    const scrollIntoViewMock = vi.fn();
+    Object.defineProperty(HTMLElement.prototype, "scrollIntoView", {
+      configurable: true,
+      value: scrollIntoViewMock,
+    });
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(prefers-reduced-motion: reduce)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    });
+    useUiStore.setState({
+      diagnosticJumpHighlight: { kind: "scene", id: "scene-1" },
+    });
+
+    const { queryClient, unmount } = renderSceneWorkspace();
+
+    const sceneWorkspacePanel = await waitFor(() => {
+      const panel = document.querySelector("[data-jump-highlighted='true']");
+      expect(panel).toBeTruthy();
+      return panel as HTMLElement;
+    });
+
+    expect(scrollIntoViewMock).toHaveBeenCalledWith({
+      block: "start",
+      behavior: "auto",
+    });
+    expect(document.activeElement).toBe(sceneWorkspacePanel);
+    expect(
+      screen.getByText(`Jumped to scene ${currentSnapshot.scenes[0].title}.`),
+    ).toBeTruthy();
+
+    unmount();
+    queryClient.clear();
+  });
+
   it("keeps unsaved planning edits in place when draft autosave refreshes the snapshot", async () => {
     const { queryClient, unmount } = renderSceneWorkspace();
 

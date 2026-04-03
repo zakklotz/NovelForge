@@ -28,6 +28,15 @@ interface FocusRestoreDescriptor {
   label: string | null;
 }
 
+const TABBABLE_DIALOG_SELECTOR = [
+  "button:not([disabled])",
+  "input:not([disabled])",
+  "textarea:not([disabled])",
+  "select:not([disabled])",
+  "[href]",
+  "[tabindex]:not([tabindex='-1'])",
+].join(", ");
+
 function normalizeFocusRestoreLabel(value: string | null | undefined) {
   return value?.replace(/\s+/g, " ").trim().toLowerCase() ?? "";
 }
@@ -100,6 +109,17 @@ function findFocusRestoreTarget(
 function findFallbackFocusTarget() {
   return document.querySelector<HTMLElement>(
     "button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])",
+  );
+}
+
+function getTabbableDialogElements(container: HTMLElement | null) {
+  if (!container) {
+    return [];
+  }
+
+  return Array.from(container.querySelectorAll<HTMLElement>(TABBABLE_DIALOG_SELECTOR)).filter(
+    (candidate) =>
+      candidate.tabIndex !== -1 && candidate.getAttribute("aria-hidden") !== "true",
   );
 }
 
@@ -188,6 +208,7 @@ function CreateProjectDialog({
       role="dialog"
       aria-modal="true"
       aria-label="Create a new project"
+      tabIndex={-1}
     >
       <Panel className="w-full max-w-3xl bg-[var(--content-bg)]">
         <CreateProjectSurface
@@ -562,12 +583,46 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     primaryField?.focus();
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key !== "Escape" || isStartingProject) {
+      if (event.key === "Escape") {
+        if (isStartingProject) {
+          return;
+        }
+
+        event.preventDefault();
+        handleDismissCreateProjectDialog();
         return;
       }
 
-      event.preventDefault();
-      handleDismissCreateProjectDialog();
+      if (event.key !== "Tab") {
+        return;
+      }
+
+      const dialogElement = createProjectDialogRef.current;
+      const tabbableElements = getTabbableDialogElements(dialogElement);
+      if (tabbableElements.length === 0) {
+        event.preventDefault();
+        dialogElement?.focus();
+        return;
+      }
+
+      const activeElement =
+        document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      const firstElement = tabbableElements[0];
+      const lastElement = tabbableElements[tabbableElements.length - 1];
+      const focusIsInsideDialog = activeElement ? dialogElement?.contains(activeElement) : false;
+
+      if (event.shiftKey) {
+        if (!focusIsInsideDialog || activeElement === firstElement) {
+          event.preventDefault();
+          lastElement.focus();
+        }
+        return;
+      }
+
+      if (!focusIsInsideDialog || activeElement === lastElement) {
+        event.preventDefault();
+        firstElement.focus();
+      }
     };
 
     window.addEventListener("keydown", handleKeyDown);

@@ -32,7 +32,7 @@ import { useAiRuntime } from "@/hooks/useAiRuntime";
 import { useAppSettings } from "@/hooks/useAppSettings";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
-import { cn, splitLines } from "@/lib/utils";
+import { cn, scrollIntoViewWithAccessibleMotion, splitLines } from "@/lib/utils";
 import { useUiStore } from "@/store/uiStore";
 import { createEmptySceneInput } from "@/features/scenes/sceneFactories";
 
@@ -310,6 +310,7 @@ export function ChapterDetailView() {
   const [sceneMoveError, setSceneMoveError] = useState<string | null>(null);
   const chapterJumpHighlightRef = useRef<HTMLElement | null>(null);
   const [isJumpHighlighted, setIsJumpHighlighted] = useState(false);
+  const [jumpAnnouncement, setJumpAnnouncement] = useState("");
 
   useEffect(() => {
     planningRef.current = planning;
@@ -394,18 +395,18 @@ export function ChapterDetailView() {
     }
 
     setIsJumpHighlighted(true);
+    setJumpAnnouncement(`Jumped to chapter ${chapter.title}.`);
     setDiagnosticJumpHighlight(null);
 
     const highlightNode = chapterJumpHighlightRef.current;
     if (highlightNode) {
-      if (typeof highlightNode.scrollIntoView === "function") {
-        highlightNode.scrollIntoView({ block: "start", behavior: "smooth" });
-      }
+      scrollIntoViewWithAccessibleMotion(highlightNode, { block: "start" });
       highlightNode.focus({ preventScroll: true });
     }
 
     const timeoutId = window.setTimeout(() => {
       setIsJumpHighlighted(false);
+      setJumpAnnouncement("");
     }, 1800);
 
     return () => window.clearTimeout(timeoutId);
@@ -838,6 +839,9 @@ export function ChapterDetailView() {
             : null,
         )}
       >
+        <p aria-live="polite" aria-atomic="true" className="sr-only">
+          {jumpAnnouncement}
+        </p>
         <SectionHeading
           title={currentChapter.title}
           description="Plan the chapter above the prose level: define why it exists, what it changes, and how its scenes ladder upward."

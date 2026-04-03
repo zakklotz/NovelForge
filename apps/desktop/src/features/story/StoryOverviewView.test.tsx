@@ -641,6 +641,13 @@ describe("StoryOverviewView", () => {
       sampleProjectSnapshot.project.id,
       ["chapter-2", "chapter-1"],
     );
+    const movedChapterCard = document.querySelector(
+      "[data-story-spine-card='chapter'][data-chapter-id='chapter-1']",
+    ) as HTMLElement | null;
+    expect(movedChapterCard?.dataset.storySpineSettled).toBe("true");
+    expect(
+      screen.getByText("Moved Chapter 1: The Wrong Package later in Story Spine."),
+    ).toBeTruthy();
 
     unmount();
     queryClient.clear();
@@ -1026,7 +1033,7 @@ describe("StoryOverviewView", () => {
     expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
     expect(
       screen.getByText(
-        "A deliberate holding area for scenes that belong in the plan, but are not yet placed on the chapter spine.",
+        "A planning bucket for scenes that belong in the story, but are not yet placed on the chapter spine.",
       ),
     ).toBeTruthy();
     expect(screen.getByText("Ashfall Detour")).toBeTruthy();
@@ -1059,6 +1066,80 @@ describe("StoryOverviewView", () => {
 
     expect(screen.getByText("Scene Frame")).toBeTruthy();
     expect(useUiStore.getState().selectedChapterId).toBeNull();
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("uses clearer wording in the unassigned and chapter move panels", async () => {
+    currentSnapshot = {
+      ...currentSnapshot,
+      scenes: [
+        ...currentSnapshot.scenes,
+        createUnassignedScene("scene-unassigned", 0, "Ashfall Detour"),
+      ],
+    };
+
+    const { queryClient, unmount } = renderRouter();
+
+    await waitFor(() => {
+      expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
+    });
+
+    expect(
+      screen.getByText(
+        "A planning bucket for scenes that belong in the story, but are not yet placed on the chapter spine.",
+      ),
+    ).toBeTruthy();
+
+    const unassignedSceneCard = screen
+      .getByRole("button", { name: /open ashfall detour/i })
+      .closest("[data-story-spine-card='unassigned-scene']");
+    if (!(unassignedSceneCard instanceof HTMLElement)) {
+      throw new Error("Expected unassigned Story Spine scene card for Ashfall Detour.");
+    }
+
+    fireEvent.change(within(unassignedSceneCard).getByLabelText(/destination chapter/i), {
+      target: { value: "chapter-2" },
+    });
+    fireEvent.change(within(unassignedSceneCard).getByLabelText(/placement/i), {
+      target: { value: "before" },
+    });
+
+    expect(within(unassignedSceneCard).getByLabelText(/reference scene/i)).toBeTruthy();
+    expect(
+      within(unassignedSceneCard).getByText(
+        "Will place this scene before Checkpoint Lanterns in Chapter 2: Border Sparks.",
+      ),
+    ).toBeTruthy();
+
+    const chapterSceneCard = screen
+      .getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      })
+      .closest("[data-story-spine-card='chapter-scene']");
+    if (!(chapterSceneCard instanceof HTMLElement)) {
+      throw new Error("Expected Story Spine scene card for Dock Nine Exchange.");
+    }
+
+    fireEvent.click(
+      within(chapterSceneCard).getByRole("button", {
+        name: /move dock nine exchange to another chapter or unassigned/i,
+      }),
+    );
+
+    expect(within(chapterSceneCard).getByLabelText(/destination/i)).toBeTruthy();
+    expect(within(chapterSceneCard).getByLabelText(/^Placement$/i)).toBeTruthy();
+
+    fireEvent.change(within(chapterSceneCard).getByLabelText(/destination/i), {
+      target: { value: "__unassigned__" },
+    });
+
+    expect(
+      within(chapterSceneCard).getByText(
+        "Will place this scene at the end of Unassigned.",
+      ),
+    ).toBeTruthy();
 
     unmount();
     queryClient.clear();
@@ -1105,6 +1186,11 @@ describe("StoryOverviewView", () => {
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
     });
+    const movedSceneCard = document.querySelector(
+      "[data-story-spine-card='unassigned-scene'][data-scene-id='scene-unassigned-1']",
+    ) as HTMLElement | null;
+    expect(movedSceneCard?.dataset.storySpineSettled).toBe("true");
+    expect(screen.getByText("Moved Ashfall Detour later in Unassigned.")).toBeTruthy();
 
     unmount();
     queryClient.clear();
@@ -1171,11 +1257,11 @@ describe("StoryOverviewView", () => {
       ).disabled,
     ).toBe(true);
     expect(
-      (within(sceneCard).getByLabelText(/move into chapter/i) as HTMLSelectElement)
+      (within(sceneCard).getByLabelText(/destination chapter/i) as HTMLSelectElement)
         .disabled,
     ).toBe(true);
     expect(
-      (within(sceneCard).getByLabelText(/insert position/i) as HTMLSelectElement)
+      (within(sceneCard).getByLabelText(/placement/i) as HTMLSelectElement)
         .disabled,
     ).toBe(true);
     expect(
@@ -1199,7 +1285,7 @@ describe("StoryOverviewView", () => {
     }
 
     const otherMoveIntoChapter = within(otherSceneCard).getByLabelText(
-      /move into chapter/i,
+      /destination chapter/i,
     ) as HTMLSelectElement;
     expect(
       (within(otherSceneCard).getByRole("button", {
@@ -1241,7 +1327,7 @@ describe("StoryOverviewView", () => {
       expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+    fireEvent.change(screen.getByLabelText(/destination chapter/i), {
       target: { value: "chapter-2" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
@@ -1280,10 +1366,10 @@ describe("StoryOverviewView", () => {
       expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+    fireEvent.change(screen.getByLabelText(/destination chapter/i), {
       target: { value: "chapter-2" },
     });
-    fireEvent.change(screen.getByLabelText(/insert position/i), {
+    fireEvent.change(screen.getByLabelText(/placement/i), {
       target: { value: "start" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
@@ -1332,13 +1418,13 @@ describe("StoryOverviewView", () => {
       expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
     });
 
-    fireEvent.change(screen.getByLabelText(/move into chapter/i), {
+    fireEvent.change(screen.getByLabelText(/destination chapter/i), {
       target: { value: "chapter-2" },
     });
-    fireEvent.change(screen.getByLabelText(/insert position/i), {
+    fireEvent.change(screen.getByLabelText(/placement/i), {
       target: { value: "after" },
     });
-    fireEvent.change(screen.getByLabelText(/after scene/i), {
+    fireEvent.change(screen.getByLabelText(/reference scene/i), {
       target: { value: "scene-3" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move to Chapter" }));
@@ -1617,11 +1703,11 @@ describe("StoryOverviewView", () => {
 
     expect(sceneCard.getAttribute("aria-busy")).toBe("true");
     expect(
-      (within(sceneCard).getByLabelText(/move destination/i) as HTMLSelectElement)
+      (within(sceneCard).getByLabelText(/destination/i) as HTMLSelectElement)
         .disabled,
     ).toBe(true);
     expect(
-      (within(sceneCard).getByLabelText(/insert position/i) as HTMLSelectElement)
+      (within(sceneCard).getByLabelText(/placement/i) as HTMLSelectElement)
         .disabled,
     ).toBe(true);
     expect(
@@ -1690,10 +1776,10 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter/i,
       }),
     );
-    fireEvent.change(screen.getByLabelText(/insert position/i), {
+    fireEvent.change(screen.getByLabelText(/placement/i), {
       target: { value: "before" },
     });
-    fireEvent.change(screen.getByLabelText(/before scene/i), {
+    fireEvent.change(screen.getByLabelText(/reference scene/i), {
       target: { value: "scene-4" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
@@ -1757,7 +1843,7 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
-    fireEvent.change(screen.getByLabelText(/move destination/i), {
+    fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: "__unassigned__" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));
@@ -1776,6 +1862,11 @@ describe("StoryOverviewView", () => {
     await waitFor(() => {
       expect(screen.getByText("Unassigned Scenes")).toBeTruthy();
     });
+    const movedSceneCard = document.querySelector(
+      "[data-story-spine-card='unassigned-scene'][data-scene-id='scene-1']",
+    ) as HTMLElement | null;
+    expect(movedSceneCard?.dataset.storySpineSettled).toBe("true");
+    expect(screen.getByText("Moved Dock Nine Exchange to Unassigned.")).toBeTruthy();
 
     unmount();
     queryClient.clear();
@@ -1810,13 +1901,13 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
-    fireEvent.change(within(sceneCard).getByLabelText(/move destination/i), {
+    fireEvent.change(within(sceneCard).getByLabelText(/destination/i), {
       target: { value: "__unassigned__" },
     });
-    fireEvent.change(within(sceneCard).getByLabelText(/insert position/i), {
+    fireEvent.change(within(sceneCard).getByLabelText(/placement/i), {
       target: { value: "after" },
     });
-    fireEvent.change(within(sceneCard).getByLabelText(/after scene/i), {
+    fireEvent.change(within(sceneCard).getByLabelText(/reference scene/i), {
       target: { value: "scene-unassigned-1" },
     });
     fireEvent.click(within(sceneCard).getByRole("button", { name: "Move Scene" }));
@@ -1854,7 +1945,7 @@ describe("StoryOverviewView", () => {
         name: /move dock nine exchange to another chapter or unassigned/i,
       }),
     );
-    fireEvent.change(screen.getByLabelText(/move destination/i), {
+    fireEvent.change(screen.getByLabelText(/destination/i), {
       target: { value: "__unassigned__" },
     });
     fireEvent.click(screen.getByRole("button", { name: "Move Scene" }));

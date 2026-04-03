@@ -362,7 +362,15 @@ describe("AppRouter loaded project flow", () => {
     });
 
     const titleInput = await screen.findByPlaceholderText("Untitled Novel");
+    const cancelButton = screen.getByRole("button", { name: "Cancel" });
     expect(document.activeElement).toBe(titleInput);
+
+    cancelButton.focus();
+    fireEvent.keyDown(window, { key: "Tab" });
+    expect(document.activeElement).toBe(titleInput);
+
+    fireEvent.keyDown(window, { key: "Tab", shiftKey: true });
+    expect(document.activeElement).toBe(cancelButton);
 
     fireEvent.keyDown(window, { key: "Escape" });
 

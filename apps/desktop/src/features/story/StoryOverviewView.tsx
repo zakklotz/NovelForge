@@ -79,6 +79,12 @@ interface StorySpineSceneUpdateState {
   action: "reorder" | "move";
 }
 
+interface StorySpineSettleFeedback {
+  kind: "chapter" | "scene";
+  id: string;
+  announcement: string;
+}
+
 const UNASSIGNED_DESTINATION_VALUE = "__unassigned__";
 
 interface StoryBriefState {
@@ -581,6 +587,33 @@ function getStorySpineSceneUpdateLabel(
   return action === "reorder" ? "Updating order..." : "Updating placement...";
 }
 
+function getStorySpineDestinationLabel(
+  targetChapter: Pick<Chapter, "title"> | null,
+) {
+  return targetChapter?.title ?? "Unassigned";
+}
+
+function buildStorySpinePlacementSummary({
+  placement,
+  destinationLabel,
+  anchorLabel,
+}: {
+  placement: SceneMovePlacement;
+  destinationLabel: string;
+  anchorLabel: string;
+}) {
+  switch (placement) {
+    case "start":
+      return `Will place this scene at the beginning of ${destinationLabel}.`;
+    case "end":
+      return `Will place this scene at the end of ${destinationLabel}.`;
+    case "before":
+      return `Will place this scene before ${anchorLabel} in ${destinationLabel}.`;
+    case "after":
+      return `Will place this scene after ${anchorLabel} in ${destinationLabel}.`;
+  }
+}
+
 export function StoryOverviewView() {
   const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
@@ -624,6 +657,8 @@ export function StoryOverviewView() {
   const [unassignedMoveDrafts, setUnassignedMoveDrafts] = useState<
     Record<string, UnassignedSceneMoveDraft>
   >({});
+  const [storySpineSettleFeedback, setStorySpineSettleFeedback] =
+    useState<StorySpineSettleFeedback | null>(null);
   const storyBriefDirty =
     Boolean(snapshot) && !areStoryBriefStatesEqual(storyBrief, persistedStoryBrief);
   const dirtyStoryBriefFields = storyBriefDirty
@@ -639,6 +674,18 @@ export function StoryOverviewView() {
   useEffect(() => {
     currentProjectRef.current = snapshot?.project ?? null;
   }, [snapshot?.project]);
+
+  useEffect(() => {
+    if (!storySpineSettleFeedback) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setStorySpineSettleFeedback(null);
+    }, 1800);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [storySpineSettleFeedback]);
 
   useEffect(() => {
     if (!snapshot) {
@@ -986,10 +1033,19 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
+    setStorySpineSettleFeedback(null);
     setMovingChapterId(chapterId);
 
     try {
       await reorderChapters(currentSnapshot.project.id, reorderedChapterIds);
+      const movedChapter = orderedChapters.find((chapter) => chapter.id === chapterId);
+      if (movedChapter) {
+        setStorySpineSettleFeedback({
+          kind: "chapter",
+          id: chapterId,
+          announcement: `Moved ${movedChapter.title} ${direction} in Story Spine.`,
+        });
+      }
     } catch (error) {
       setActionError(
         error instanceof Error
@@ -1005,6 +1061,7 @@ export function StoryOverviewView() {
     sceneId: string,
     direction: "earlier" | "later",
   ) {
+    const scene = unassignedScenes.find((candidate) => candidate.id === sceneId);
     const currentIndex = unassignedScenes.findIndex((scene) => scene.id === sceneId);
     if (currentIndex < 0) {
       return;
@@ -1021,6 +1078,7 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
+    setStorySpineSettleFeedback(null);
     setMovingUnassignedScene({
       sceneId,
       action: "reorder",
@@ -1033,6 +1091,13 @@ export function StoryOverviewView() {
         targetChapterId: null,
         targetIndex,
       });
+      if (scene) {
+        setStorySpineSettleFeedback({
+          kind: "scene",
+          id: sceneId,
+          announcement: `Moved ${scene.title} ${direction} in Unassigned.`,
+        });
+      }
     } catch (error) {
       setActionError(
         error instanceof Error
@@ -1045,14 +1110,20 @@ export function StoryOverviewView() {
   }
 
   async function handleAssignUnassignedScene(sceneId: string) {
+    const scene = unassignedScenes.find((candidate) => candidate.id === sceneId);
     const moveDraft = getUnassignedMoveDraft(sceneId);
     if (!moveDraft) {
       return;
     }
 
+    const destinationLabel = getStorySpineDestinationLabel(
+      orderedChapters.find((chapter) => chapter.id === moveDraft.targetChapterId) ?? null,
+    );
+
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
+    setStorySpineSettleFeedback(null);
     setMovingUnassignedScene({
       sceneId,
       action: "move",
@@ -1065,6 +1136,13 @@ export function StoryOverviewView() {
         targetChapterId: moveDraft.targetChapterId,
         targetIndex: getUnassignedTargetIndex(moveDraft),
       });
+      if (scene) {
+        setStorySpineSettleFeedback({
+          kind: "scene",
+          id: sceneId,
+          announcement: `Moved ${scene.title} to ${destinationLabel}.`,
+        });
+      }
     } catch (error) {
       setActionError(
         error instanceof Error
@@ -1085,6 +1163,8 @@ export function StoryOverviewView() {
       currentSnapshot.scenes,
       chapterId,
     );
+    const scene = currentChapterScenes.find((candidate) => candidate.id === sceneId);
+    const chapter = orderedChapters.find((candidate) => candidate.id === chapterId);
     const currentIndex = currentChapterScenes.findIndex(
       (scene) => scene.id === sceneId,
     );
@@ -1104,6 +1184,7 @@ export function StoryOverviewView() {
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
+    setStorySpineSettleFeedback(null);
     setChapterSceneMoveDraft(null);
     setMovingChapterScene({
       sceneId,
@@ -1117,6 +1198,13 @@ export function StoryOverviewView() {
         targetChapterId: chapterId,
         targetIndex,
       });
+      if (scene) {
+        setStorySpineSettleFeedback({
+          kind: "scene",
+          id: sceneId,
+          announcement: `Moved ${scene.title} ${direction} in ${chapter?.title ?? "the chapter"}.`,
+        });
+      }
     } catch (error) {
       setActionError(
         error instanceof Error
@@ -1151,9 +1239,17 @@ export function StoryOverviewView() {
       return;
     }
 
+    const scene = currentSnapshot.scenes.find((candidate) => candidate.id === sceneId);
+    const destinationLabel = getStorySpineDestinationLabel(
+      orderedChapters.find(
+        (chapter) => chapter.id === chapterSceneMoveDraft.targetChapterId,
+      ) ?? null,
+    );
+
     setActionError(null);
     setStoryDiagnosticError(null);
     setStoryDiagnosticResponse(null);
+    setStorySpineSettleFeedback(null);
     setMovingChapterScene({
       sceneId,
       action: "move",
@@ -1166,6 +1262,13 @@ export function StoryOverviewView() {
         targetChapterId: chapterSceneMoveDraft.targetChapterId,
         targetIndex: getChapterSceneTargetIndex(chapterSceneMoveDraft),
       });
+      if (scene) {
+        setStorySpineSettleFeedback({
+          kind: "scene",
+          id: sceneId,
+          announcement: `Moved ${scene.title} to ${destinationLabel}.`,
+        });
+      }
       setChapterSceneMoveDraft(null);
     } catch (error) {
       setActionError(
@@ -1268,6 +1371,9 @@ export function StoryOverviewView() {
           </div>
         }
       />
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        {storySpineSettleFeedback?.announcement ?? ""}
+      </p>
 
       <Panel className="mt-6 bg-[var(--content-bg)] shadow-none">
         <SectionHeading
@@ -1686,7 +1792,7 @@ export function StoryOverviewView() {
               <section className="rounded-[8px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                 <SectionHeading
                   title="Unassigned Scenes"
-                  description="A deliberate holding area for scenes that belong in the plan, but are not yet placed on the chapter spine."
+                  description="A planning bucket for scenes that belong in the story, but are not yet placed on the chapter spine."
                   actions={
                     <div className="flex flex-wrap items-center gap-2">
                       <Badge tone="warning">
@@ -1741,6 +1847,10 @@ export function StoryOverviewView() {
                     const unassignedSceneUpdateLabel = unassignedSceneUpdateAction
                       ? getStorySpineSceneUpdateLabel(unassignedSceneUpdateAction)
                       : null;
+                    const isSettledUnassignedScene =
+                      storySpineSettleFeedback?.kind === "scene" &&
+                      storySpineSettleFeedback.id === scene.id;
+                    const destinationLabel = getStorySpineDestinationLabel(targetChapter);
                     const isUnassignedSceneCardLocked =
                       isMutatingStorySpineChapters || isUpdatingUnassignedScene;
                     const areUnassignedSceneMutationActionsDisabled =
@@ -1751,10 +1861,13 @@ export function StoryOverviewView() {
                         key={scene.id}
                         data-story-spine-card="unassigned-scene"
                         data-scene-id={scene.id}
+                        data-story-spine-settled={isSettledUnassignedScene ? "true" : undefined}
                         className={cn(
                           "rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 transition-colors",
                           isUpdatingUnassignedScene &&
                             "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]",
+                          isSettledUnassignedScene &&
+                            "border-[color:rgba(0,122,204,0.18)] bg-[color:rgba(0,122,204,0.08)]",
                         )}
                         aria-busy={isUpdatingUnassignedScene}
                       >
@@ -1829,8 +1942,8 @@ export function StoryOverviewView() {
                           <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-4">
                             <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,0.9fr)_auto] lg:items-end">
                               <Field
-                                label="Move Into Chapter"
-                                hint="Choose the destination chapter"
+                                label="Destination chapter"
+                                hint="Choose where this scene should land"
                               >
                                 <Select
                                   value={targetChapterId}
@@ -1854,7 +1967,7 @@ export function StoryOverviewView() {
                                 </Select>
                               </Field>
 
-                              <Field label="Insert Position">
+                              <Field label="Placement">
                                 <Select
                                   value={moveDraft?.placement ?? "end"}
                                   disabled={isUnassignedSceneCardLocked}
@@ -1896,13 +2009,7 @@ export function StoryOverviewView() {
                             {moveDraft?.placement === "before" ||
                             moveDraft?.placement === "after" ? (
                               <div className="mt-3 max-w-xl">
-                                <Field
-                                  label={
-                                    moveDraft.placement === "before"
-                                      ? "Before Scene"
-                                      : "After Scene"
-                                  }
-                                >
+                                <Field label="Reference scene">
                                   <Select
                                     value={moveDraft.anchorSceneId}
                                     disabled={isUnassignedSceneCardLocked}
@@ -1927,14 +2034,14 @@ export function StoryOverviewView() {
                             ) : null}
 
                             <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                              {moveDraft?.placement === "start"
-                                ? `The scene will be inserted at the beginning of ${targetChapter?.title ?? "the selected chapter"}.`
-                                : moveDraft?.placement === "end"
-                                  ? `The scene will be inserted at the end of ${targetChapter?.title ?? "the selected chapter"}.`
-                                  : moveDraft?.placement === "before"
-                                    ? `The scene will be inserted before ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`
-                                    : `The scene will be inserted after ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the selected chapter"}.`}{" "}
-                              NovelForge will persist that choice through the saved backend order.
+                              {moveDraft
+                                ? buildStorySpinePlacementSummary({
+                                    placement: moveDraft.placement,
+                                    destinationLabel,
+                                    anchorLabel:
+                                      moveAnchor?.title ?? "the selected scene",
+                                  })
+                                : null}
                             </p>
                           </div>
                         ) : (
@@ -1946,9 +2053,14 @@ export function StoryOverviewView() {
                         {unassignedSceneUpdateLabel ? (
                           <p
                             role="status"
+                            aria-atomic="true"
                             className="mt-4 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]"
                           >
-                            <RefreshCw className="size-3.5 animate-spin" />
+                            <RefreshCw
+                              className="size-3.5 animate-spin"
+                              aria-hidden="true"
+                            />
+                            <span className="sr-only">{scene.title}. </span>
                             {unassignedSceneUpdateLabel}
                           </p>
                         ) : null}
@@ -1969,6 +2081,9 @@ export function StoryOverviewView() {
               const currentChapterIndex = chapterOrderIndex.get(chapter.id) ?? 0;
               const isFirstChapter = currentChapterIndex === 0;
               const isLastChapter = currentChapterIndex === orderedChapters.length - 1;
+              const isSettledChapter =
+                storySpineSettleFeedback?.kind === "chapter" &&
+                storySpineSettleFeedback.id === chapter.id;
               const chapterMoveDestinations = [
                 ...orderedChapters
                   .filter((candidate) => candidate.id !== chapter.id)
@@ -1984,7 +2099,14 @@ export function StoryOverviewView() {
               return (
                 <article
                   key={chapter.id}
-                  className="rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4"
+                  data-story-spine-card="chapter"
+                  data-chapter-id={chapter.id}
+                  data-story-spine-settled={isSettledChapter ? "true" : undefined}
+                  className={cn(
+                    "rounded-[8px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4 transition-colors",
+                    isSettledChapter &&
+                      "border-[color:rgba(0,122,204,0.18)] bg-[color:rgba(0,122,204,0.06)]",
+                  )}
                 >
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="min-w-0">
@@ -2088,7 +2210,8 @@ export function StoryOverviewView() {
                         <p className="mt-1 text-sm text-[var(--ink-muted)]">
                           Reorder scenes here, open any scene workspace directly from
                           the chapter flow, or move a scene into another chapter or
-                          back to Unassigned without leaving Story Spine.
+                          back to the Unassigned planning bucket without leaving Story
+                          Spine.
                         </p>
                       </div>
 
@@ -2125,16 +2248,27 @@ export function StoryOverviewView() {
                             const moveAnchor = isMovingChapterScene
                               ? chapterSceneMoveAnchor
                               : null;
+                            const destinationLabel = getStorySpineDestinationLabel(
+                              targetChapter,
+                            );
+                            const isSettledChapterScene =
+                              storySpineSettleFeedback?.kind === "scene" &&
+                              storySpineSettleFeedback.id === scene.id;
 
                             return (
                               <div
                                 key={scene.id}
                                 data-story-spine-card="chapter-scene"
                                 data-scene-id={scene.id}
+                                data-story-spine-settled={
+                                  isSettledChapterScene ? "true" : undefined
+                                }
                                 className={cn(
                                   "rounded-[6px] border border-[var(--border)] bg-[var(--surface-elevated)] px-4 py-3 transition-colors",
                                   isUpdatingChapterScene &&
                                     "border-[color:rgba(0,122,204,0.24)] bg-[var(--accent-soft)]",
+                                  isSettledChapterScene &&
+                                    "border-[color:rgba(0,122,204,0.18)] bg-[color:rgba(0,122,204,0.08)]",
                                 )}
                                 aria-busy={isUpdatingChapterScene}
                               >
@@ -2233,8 +2367,8 @@ export function StoryOverviewView() {
                                     <div className="mt-4 rounded-[6px] border border-[var(--border)] bg-[var(--panel)] px-4 py-4">
                                       <div className="grid gap-3 lg:grid-cols-2">
                                       <Field
-                                        label="Move Destination"
-                                        hint="Choose the destination chapter or unassigned bucket"
+                                        label="Destination"
+                                        hint="Choose a chapter or Unassigned"
                                       >
                                         <Select
                                           value={
@@ -2276,7 +2410,7 @@ export function StoryOverviewView() {
                                         </Select>
                                       </Field>
 
-                                      <Field label="Insert Position">
+                                      <Field label="Placement">
                                         <Select
                                           value={chapterSceneMoveDraft.placement}
                                           disabled={isChapterSceneCardLocked}
@@ -2314,13 +2448,7 @@ export function StoryOverviewView() {
                                     {chapterSceneMoveDraft.placement === "before" ||
                                     chapterSceneMoveDraft.placement === "after" ? (
                                       <div className="mt-3 max-w-xl">
-                                        <Field
-                                          label={
-                                            chapterSceneMoveDraft.placement === "before"
-                                              ? "Before Scene"
-                                              : "After Scene"
-                                          }
-                                        >
+                                        <Field label="Reference scene">
                                           <Select
                                             value={chapterSceneMoveDraft.anchorSceneId}
                                             disabled={isChapterSceneCardLocked}
@@ -2351,15 +2479,12 @@ export function StoryOverviewView() {
                                     ) : null}
 
                                     <p className="mt-2 text-sm text-[var(--ink-muted)]">
-                                      {chapterSceneMoveDraft.placement === "start"
-                                        ? `The scene will be inserted at the beginning of ${targetChapter?.title ?? "the unassigned scene list"}.`
-                                        : chapterSceneMoveDraft.placement === "end"
-                                          ? `The scene will be inserted at the end of ${targetChapter?.title ?? "the unassigned scene list"}.`
-                                          : chapterSceneMoveDraft.placement === "before"
-                                            ? `The scene will be inserted before ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the unassigned scene list"}.`
-                                            : `The scene will be inserted after ${moveAnchor?.title ?? "the selected scene"} in ${targetChapter?.title ?? "the unassigned scene list"}.`}{" "}
-                                      NovelForge will persist that choice through the saved
-                                      backend order.
+                                      {buildStorySpinePlacementSummary({
+                                        placement: chapterSceneMoveDraft.placement,
+                                        destinationLabel,
+                                        anchorLabel:
+                                          moveAnchor?.title ?? "the selected scene",
+                                      })}
                                     </p>
 
                                     <div className="mt-3 flex flex-wrap gap-2">
@@ -2388,9 +2513,14 @@ export function StoryOverviewView() {
                                 {chapterSceneUpdateLabel ? (
                                   <p
                                     role="status"
+                                    aria-atomic="true"
                                     className="mt-4 inline-flex items-center gap-2 text-xs font-medium uppercase tracking-[0.18em] text-[var(--accent-strong)]"
                                   >
-                                    <RefreshCw className="size-3.5 animate-spin" />
+                                    <RefreshCw
+                                      className="size-3.5 animate-spin"
+                                      aria-hidden="true"
+                                    />
+                                    <span className="sr-only">{scene.title}. </span>
                                     {chapterSceneUpdateLabel}
                                   </p>
                                 ) : null}
