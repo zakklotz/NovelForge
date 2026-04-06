@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { Sparkles } from "lucide-react";
+import { useShallow } from "zustand/react/shallow";
 import { Badge, Button, EmptyState, Panel, SectionHeading } from "@/components/ui";
 import { useProjectSnapshot } from "@/hooks/useProjectSnapshot";
 import { useProjectRuntime } from "@/hooks/useProjectRuntime";
@@ -9,10 +10,12 @@ export function SuggestionsView() {
   const navigate = useNavigate();
   const snapshotQuery = useProjectSnapshot();
   const { queueAnalysis, updateSuggestion } = useProjectRuntime();
-  const [selectedSuggestionId, setSelectedSuggestionId] = useUiStore((state) => [
-    state.selectedSuggestionId,
-    state.setSelectedSuggestionId,
-  ]);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useUiStore(
+    useShallow((state) => [
+      state.selectedSuggestionId,
+      state.setSelectedSuggestionId,
+    ]),
+  );
   const snapshot = snapshotQuery.data;
 
   if (!snapshot) {

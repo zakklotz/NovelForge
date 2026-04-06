@@ -22,6 +22,18 @@ const MENU_EVENT_OPEN_PROJECT = "novelforge://open-project";
 const MENU_EVENT_CLOSE_PROJECT = "novelforge://close-project";
 const MENU_EVENT_OPEN_SETTINGS = "novelforge://open-settings";
 const CLOSE_APP_TARGET_LABEL = "close NovelForge";
+const STARTUP_RESTORE_WINDOW_KEY = "__NOVELFORGE_STARTUP_RESTORE__";
+
+interface StartupRestoreState {
+  status: "idle" | "pending" | "settled";
+  promise: Promise<ProjectSnapshot | null> | null;
+}
+
+declare global {
+  interface Window {
+    __NOVELFORGE_STARTUP_RESTORE__?: StartupRestoreState;
+  }
+}
 
 interface FocusRestoreDescriptor {
   tagName: "button" | "input" | "textarea" | "select";
@@ -121,6 +133,52 @@ function getTabbableDialogElements(container: HTMLElement | null) {
     (candidate) =>
       candidate.tabIndex !== -1 && candidate.getAttribute("aria-hidden") !== "true",
   );
+}
+
+function getStartupRestoreState() {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const existingState = window[STARTUP_RESTORE_WINDOW_KEY];
+  if (existingState) {
+    return existingState;
+  }
+
+  const nextState: StartupRestoreState = {
+    status: "idle",
+    promise: null,
+  };
+  window[STARTUP_RESTORE_WINDOW_KEY] = nextState;
+  return nextState;
+}
+
+function markStartupRestoreSettled() {
+  const startupRestoreState = getStartupRestoreState();
+  if (!startupRestoreState) {
+    return;
+  }
+
+  startupRestoreState.status = "settled";
+}
+
+function ensureStartupRestorePromise(
+  restoreLastProject: () => Promise<ProjectSnapshot | null>,
+) {
+  const startupRestoreState = getStartupRestoreState();
+  if (!startupRestoreState) {
+    return restoreLastProject();
+  }
+
+  if (startupRestoreState.promise) {
+    return startupRestoreState.promise;
+  }
+
+  startupRestoreState.status = "pending";
+  startupRestoreState.promise = restoreLastProject().finally(() => {
+    startupRestoreState.status = "settled";
+  });
+  return startupRestoreState.promise;
 }
 
 function StartupState({
@@ -250,7 +308,6 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
   const [isStartingProject, setIsStartingProject] = useState(false);
   const [isRestoring, setIsRestoring] = useState(true);
   const [startupError, setStartupError] = useState<string | null>(null);
-  const hasAttemptedRestore = useRef(false);
   const createProjectDialogRef = useRef<HTMLDivElement | null>(null);
   const previousFocusedElementRef = useRef<HTMLElement | null>(null);
   const previousFocusedDescriptorRef = useRef<FocusRestoreDescriptor | null>(null);
@@ -444,22 +501,40 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     return true;
   });
 
+  const restoreStartupProject = useEffectEvent(async () =>
+    ensureStartupRestorePromise(restoreLastProject),
+  );
+
   useEffect(() => {
-    if (hasAttemptedRestore.current || currentProjectId) {
+    if (currentProjectId) {
+      markStartupRestoreSettled();
       setIsRestoring(false);
       return;
     }
 
-    hasAttemptedRestore.current = true;
+    const startupRestoreState = getStartupRestoreState();
+    if (startupRestoreState?.status === "settled") {
+      setIsRestoring(false);
+      return;
+    }
+
     let cancelled = false;
 
     void (async () => {
       try {
-        const snapshot = await restoreLastProject();
+        const snapshot = await restoreStartupProject();
         if (cancelled || !snapshot) {
           return;
         }
         await openWorkspace(snapshot.projectState.lastRoute, snapshot);
+      } catch (error) {
+        if (!cancelled) {
+          setStartupError(
+            error instanceof Error
+              ? error.message
+              : "NovelForge could not restore the last project.",
+          );
+        }
       } finally {
         if (!cancelled) {
           setIsRestoring(false);
@@ -470,7 +545,7 @@ export function ProjectGate({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [currentProjectId, openWorkspace, restoreLastProject]);
+  }, [currentProjectId, openWorkspace, restoreStartupProject]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !("__TAURI_EVENT_PLUGIN_INTERNALS__" in window)) {

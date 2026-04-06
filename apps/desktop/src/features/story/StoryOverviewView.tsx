@@ -636,6 +636,7 @@ export function StoryOverviewView() {
     snapshot ? buildStoryBriefState(snapshot.project) : emptyStoryBriefState(),
   );
   const storyBriefRef = useRef(storyBrief);
+  const persistedStoryBriefRef = useRef(persistedStoryBrief);
   const currentProjectRef = useRef(snapshot?.project ?? null);
   const activeProjectIdRef = useRef<string | null>(null);
   const workspaceSavePromiseRef = useRef<Promise<void> | null>(null);
@@ -675,6 +676,10 @@ export function StoryOverviewView() {
   }, [storyBrief]);
 
   useEffect(() => {
+    persistedStoryBriefRef.current = persistedStoryBrief;
+  }, [persistedStoryBrief]);
+
+  useEffect(() => {
     currentProjectRef.current = snapshot?.project ?? null;
   }, [snapshot?.project]);
 
@@ -696,19 +701,26 @@ export function StoryOverviewView() {
     }
 
     const nextPersistedStoryBrief = buildStoryBriefState(snapshot.project);
+    const previousPersistedStoryBrief = persistedStoryBriefRef.current;
     const projectChanged = activeProjectIdRef.current !== snapshot.project.id;
     activeProjectIdRef.current = snapshot.project.id;
+    const shouldRefreshStoryBrief =
+      projectChanged ||
+      areStoryBriefStatesEqual(storyBriefRef.current, previousPersistedStoryBrief);
 
-    setPersistedStoryBrief((currentPersistedStoryBrief) => {
-      if (
-        projectChanged ||
-        areStoryBriefStatesEqual(storyBriefRef.current, currentPersistedStoryBrief)
-      ) {
-        setStoryBrief(nextPersistedStoryBrief);
-      }
+    setPersistedStoryBrief((currentPersistedStoryBrief) =>
+      areStoryBriefStatesEqual(currentPersistedStoryBrief, nextPersistedStoryBrief)
+        ? currentPersistedStoryBrief
+        : nextPersistedStoryBrief,
+    );
 
-      return nextPersistedStoryBrief;
-    });
+    if (shouldRefreshStoryBrief) {
+      setStoryBrief((currentStoryBrief) =>
+        areStoryBriefStatesEqual(currentStoryBrief, nextPersistedStoryBrief)
+          ? currentStoryBrief
+          : nextPersistedStoryBrief,
+      );
+    }
   }, [snapshot]);
 
   useLayoutEffect(() => {

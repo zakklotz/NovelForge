@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import React from "react";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -33,6 +34,10 @@ const dialogMock = vi.hoisted(() => ({
 const menuListeners = vi.hoisted(
   () => new Map<string, (event?: unknown) => void | Promise<void>>(),
 );
+
+type StartupRestoreWindow = Window & {
+  __NOVELFORGE_STARTUP_RESTORE__?: unknown;
+};
 
 const windowApiMock = vi.hoisted(() => {
   let closeRequestedHandler:
@@ -122,15 +127,22 @@ class MockWorker {
 
 describe("AppRouter loaded project flow", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     tauriApiMock.createProject.mockReset();
     tauriApiMock.openProject.mockReset();
+    tauriApiMock.restoreLastProject.mockReset();
     tauriApiMock.restoreLastProject.mockResolvedValue(null);
+    tauriApiMock.closeProject.mockReset();
     tauriApiMock.closeProject.mockResolvedValue(undefined);
+    tauriApiMock.getProjectSnapshot.mockReset();
     tauriApiMock.getProjectSnapshot.mockResolvedValue(sampleProjectSnapshot);
+    tauriApiMock.syncSuggestions.mockReset();
     tauriApiMock.syncSuggestions.mockResolvedValue([]);
+    tauriApiMock.saveProjectState.mockReset();
     tauriApiMock.saveProjectState.mockResolvedValue(sampleProjectSnapshot.projectState);
     dialogMock.open.mockReset();
     dialogMock.save.mockReset();
+    tauriApiMock.getAppSettings.mockReset();
     tauriApiMock.getAppSettings.mockResolvedValue({
       ai: {
         defaultProvider: "gemini",
@@ -141,6 +153,7 @@ describe("AppRouter loaded project flow", () => {
         },
       },
     });
+    tauriApiMock.listRecommendedModels.mockReset();
     tauriApiMock.listRecommendedModels.mockResolvedValue([]);
 
     menuListeners.clear();
@@ -150,6 +163,7 @@ describe("AppRouter loaded project flow", () => {
       configurable: true,
       value: {},
     });
+    delete (window as StartupRestoreWindow).__NOVELFORGE_STARTUP_RESTORE__;
     window.history.pushState({}, "", "/");
     useUiStore.getState().resetUi();
     useUiStore.setState({ currentProjectId: sampleProjectSnapshot.project.id });
@@ -168,6 +182,31 @@ describe("AppRouter loaded project flow", () => {
       <QueryClientProvider client={queryClient}>
         <AppRouter />
       </QueryClientProvider>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Chapters").length).toBeGreaterThan(0);
+    });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("renders a loaded project in Strict Mode without looping", async () => {
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <AppRouter />
+        </QueryClientProvider>
+      </React.StrictMode>,
     );
 
     await waitFor(() => {
@@ -412,6 +451,43 @@ describe("AppRouter loaded project flow", () => {
     await waitFor(() => {
       expect(screen.getAllByText("Scenes").length).toBeGreaterThan(0);
     });
+
+    unmount();
+    queryClient.clear();
+  });
+
+  it("restores the last project only once in Strict Mode", async () => {
+    const restoredSnapshot = {
+      ...sampleProjectSnapshot,
+      projectState: {
+        ...sampleProjectSnapshot.projectState,
+        lastRoute: "/suggestions" as const,
+      },
+    };
+    tauriApiMock.restoreLastProject.mockResolvedValue(restoredSnapshot);
+    useUiStore.getState().resetUi();
+
+    const queryClient = new QueryClient({
+      defaultOptions: {
+        queries: {
+          retry: false,
+        },
+      },
+    });
+
+    const { unmount } = render(
+      <React.StrictMode>
+        <QueryClientProvider client={queryClient}>
+          <AppRouter />
+        </QueryClientProvider>
+      </React.StrictMode>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getAllByText("Suggestions Inbox").length).toBeGreaterThan(0);
+    });
+
+    expect(tauriApiMock.restoreLastProject).toHaveBeenCalledTimes(1);
 
     unmount();
     queryClient.clear();
